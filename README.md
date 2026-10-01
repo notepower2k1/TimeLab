@@ -8,6 +8,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.6-blue.svg)](manifest.json)
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Brave-orange.svg)](https://www.google.com/chrome/)
 [![Language](https://img.shields.io/badge/language-Tiếng%20Việt%20%7C%20English-blueviolet.svg)](i18n.js)
+[![Privacy](https://img.shields.io/badge/privacy-100%25%20Local--First-success.svg)](PRIVACY.md)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 
 **TimeLab** là bộ công cụ toàn diện (All-in-One Productivity Suite) dành cho Software Engineers, Tech Leads và các đội ngũ dự án làm việc trên nền tảng **GitLab**. Tiện ích giúp tự động hóa quá trình theo dõi tiến độ công việc, kiểm soát thời gian đã bỏ ra (spent time) so với ước lượng (estimate), chấm công hàng ngày (timesheet audit) và tính toán hiệu suất (KPI) trực quan.
@@ -93,6 +94,7 @@ Nút bấm thông minh được nhúng thẳng vào giao diện GitLab Issue / M
 - **Zero Telemetry**: Extension hoàn toàn **không** gắn mã theo dõi, **không** thu thập thông tin người dùng và **không** có server bên thứ ba.
 - **Kết nối trực tiếp**: Mọi kết nối API được thực hiện trực tiếp giữa trình duyệt của bạn và máy chủ GitLab thông qua token của bạn.
 - **Tuân thủ Manifest V3 CSP**: Tuyệt đối không nạp mã từ xa (`no remote scripts`), các thư viện (Chart.js, ExcelJS) đều được đóng gói offline bên trong extension.
+- **Chính sách chi tiết**: Đọc toàn bộ văn bản [Chính sách quyền riêng tư (Privacy Policy)](PRIVACY.md).
 
 ---
 

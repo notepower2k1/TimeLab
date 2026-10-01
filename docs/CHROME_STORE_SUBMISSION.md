@@ -127,83 +127,75 @@ PRIVACY & SECURITY FIRST:
 
 ---
 
-## 3. Single-Purpose Policy Declaration
+## 3. Single-Purpose Policy Declaration (Mục đích duy nhất)
 
 **Chrome Web Store Single-Purpose Requirement:**
 *"An extension must have a single purpose that is narrow and easy to understand."*
 
-### Official Single-Purpose Statement:
-> **"TimeLab has a single purpose: enabling software developers and project teams using GitLab to audit daily spent time, evaluate monthly performance against KPI targets, and maintain accurate work logs within their GitLab development workflow."**
->
-> All integrated features—including timesheet aggregation, monthly KPI calculation, issue summary modals, local kanban task management, and workday reminders—directly support the core purpose of work tracking, time compliance, and transparent developer performance evaluation on GitLab.
+### Official Single-Purpose Statement (Copy & Paste vào ô Single Purpose):
+```text
+TimeLab has a single purpose: enabling software developers and project teams using GitLab to audit daily spent time, evaluate monthly performance against KPI targets, and maintain accurate work logs within their GitLab development workflow.
+```
+
+*(Bản dịch tiếng Việt tham khảo):*
+> TimeLab có một mục đích duy nhất: cho phép các kỹ sư phần mềm và đội ngũ dự án sử dụng GitLab kiểm toán thời gian đã dành ra hàng ngày, đánh giá hiệu suất hàng tháng so với chỉ tiêu KPI, và duy trì nhật ký công việc chính xác ngay trong quy trình phát triển trên GitLab.
 
 ---
 
-## 4. Permissions Justification (For Chrome Reviewers)
+## 4. Permissions Justification (Lý do yêu cầu quyền)
 
-When filling out the **Privacy practices** tab in the Chrome Developer Dashboard, use the exact justifications below:
+Khi điền vào tab **Thực hành về quyền riêng tư (Privacy practices)** trên Chrome Developer Dashboard, Google sẽ yêu cầu giải trình cho từng quyền được khai báo trong `manifest.json`. Hãy copy chính xác các đoạn văn tiếng Anh dưới đây vào ô tương ứng:
 
-| Permission | Chrome Reviewer Justification |
-| :--- | :--- |
-| **`storage`** | Required to store user settings, the user's GitLab Personal Access Token, configured GitLab server URL, leave day records, local sticky notes, and Kanban to-do items locally on the device using `chrome.storage.local`. No user data is ever transmitted to external servers. |
-| **`alarms`** | Required to schedule background checks for morning check-in and evening check-out alerts, as well as the end-of-day reminder that scans for tasks created today that have not yet been added to the user's KPI sheet. |
-| **`notifications`** | Required to display native desktop notifications reminding developers to check in, check out, or log time on unadded GitLab tasks before leaving work. |
-| **`scripting`** | Required to dynamically register and unregister content scripts on custom, enterprise, or self-hosted GitLab domains entered by the user in settings, enabling the in-page KPI summary button without requiring extension updates. |
-| **Static Host Permissions (`gitlab.com`, `gitlab.widosoft.com`)** | Required to perform REST API (`/api/v4/issues`, `/api/v4/user`) and GraphQL API queries against standard GitLab Cloud (`gitlab.com`) and on-premise instances to fetch task metrics, spent hours, and timesheets. |
-| **Optional Host Permissions (`https://*/*`, `http://*/*`)** | **Least Privilege Justification:**<br>Rather than requesting broad `<all_urls>` permission statically, TimeLab strictly requests runtime host permission (`chrome.permissions.request`) ONLY when the user explicitly enters and saves an on-premise or enterprise self-hosted GitLab server URL (e.g. `gitlab.company.corp`, `git.internal.net`, `192.168.x.x`).<br><br>**Security Guarantee:** The extension prompts the user via Chrome's native permission modal for that specific server origin only, and never intercepts or accesses any unrelated third-party websites. |
+| Quyền (Permission) | Lý do giải trình cho Chrome Reviewer (Copy & Paste) | Giải thích tiếng Việt |
+| :--- | :--- | :--- |
+| **`storage`** | `Required to store user settings, the user's GitLab Personal Access Token, configured GitLab server URL, leave day records, local sticky notes, and Kanban to-do items locally on the device using chrome.storage.local. No user data is ever transmitted to external servers.` | Lưu cài đặt, token GitLab, cấu hình server, ngày nghỉ, ghi chú và task Kanban ngay trên máy (`chrome.storage.local`). Không gửi ra ngoài. |
+| **`alarms`** | `Required to schedule background timers for morning check-in and evening check-out alerts, as well as the end-of-day reminder that scans for tasks created today that have not yet been added to the user's KPI sheet.` | Đặt hẹn giờ chạy ngầm nhắc nhở điểm danh sáng, chấm công chiều và cảnh báo công việc chưa add vào KPI cuối ngày. |
+| **`notifications`** | `Required to display native desktop notifications reminding developers to check in, check out, or log time on unadded GitLab tasks before leaving work.` | Hiển thị thông báo màn hình (desktop notification) nhắc check-in, check-out và task chưa log giờ. |
+| **`scripting`** | `Required to dynamically register and unregister content scripts on custom, enterprise, or self-hosted GitLab domains entered by the user in settings, enabling the in-page KPI summary button without requiring extension updates.` | Đăng ký động content script trên các server GitLab riêng của công ty do người dùng cấu hình mà không cần cập nhật extension. |
+| **Host Permissions (`gitlab.com`, `gitlab.widosoft.com`)** | `Required to perform REST API (/api/v4/issues, /api/v4/user) and GraphQL API queries against standard GitLab Cloud (gitlab.com) and on-premise instances to fetch task metrics, spent hours, and timesheets.` | Gọi API REST và GraphQL đến GitLab để lấy thông tin task, giờ làm và bảng chấm công. |
+| **Optional Host Permissions (`https://*/*`, `http://*/*`)** | `Required to support enterprise or self-hosted GitLab instances (e.g., gitlab.company.com). Instead of requesting broad permissions upfront, TimeLab requests host access at runtime only when the user explicitly saves a custom GitLab URL in settings.` | Hỗ trợ server GitLab nội bộ của doanh nghiệp. Chỉ xin cấp quyền khi người dùng nhập domain cụ thể trong cài đặt (Least-Privilege). |
 
 ---
 
-## 5. Complete Privacy Policy Draft
+## 5. Data Usage Disclosures (Khai báo sử dụng dữ liệu)
 
-*(Host this policy at a publicly accessible URL, e.g. on GitHub Pages, GitLab Pages, or a personal website, and paste the URL into the Chrome Web Store Console.)*
+Trong mục **Data usage (Sử dụng dữ liệu)** trên Chrome Developer Dashboard:
+
+### 1. Thu thập dữ liệu (Data Collection):
+- **"Do you collect or transmit user data?"**: Chọn **NO**.
+- Nếu có danh sách các loại dữ liệu:
+  - **Personally identifiable information**: KHÔNG thu thập (Not collected).
+  - **Authentication information (Personal Access Token)**: Chỉ xử lý cục bộ trên thiết bị của người dùng (`chrome.storage.local`) để xác thực trực tiếp với GitLab của người dùng. Tuyệt đối không gửi về máy chủ của nhà phát triển hay bên thứ ba.
+  - **Web history / Browsing activity**: KHÔNG thu thập (Not collected). Script chỉ kích hoạt trên URL Issue/MR của GitLab.
+  - **Financial / Health / Location data**: KHÔNG thu thập (Not collected).
+
+### 2. Tuyên bố cam kết của nhà phát triển (Bắt buộc tích chọn cả 4 ô):
+- [x] **Developer Program Policies:** *"I certify that my extension complies with the Developer Program Policies."* (Chứng nhận tuân thủ chính sách của Google).
+- [x] **No Data Sale:** *"I certify that my extension does not sell data to third parties."* (Cam kết không bán dữ liệu cho bên thứ ba).
+- [x] **Single Purpose Alignment:** *"I certify that my extension does not use or transfer data for purposes that are unrelated to the item's single purpose."* (Cam kết không dùng dữ liệu ngoài mục đích duy nhất).
+- [x] **No Credit Scoring / Lending:** *"I certify that my extension does not use or transfer data to determine creditworthiness or for lending purposes."* (Cam kết không dùng để chấm điểm tín dụng hoặc cho vay).
+
+---
+
+## 6. Complete Privacy Policy Draft (Chính sách quyền riêng tư)
+
+Văn bản chính sách quyền riêng tư đã được tạo hoàn chỉnh tại file [PRIVACY.md](file:///D:/CodingTime/KPIGitlabExtension/PRIVACY.md).
+Bạn có thể dùng đường dẫn file này trên GitHub/GitLab repository để dán vào ô **Privacy policy URL** trên Chrome Developer Dashboard:
+`https://github.com/<username>/<repo>/blob/main/PRIVACY.md`
+
+*(Nội dung rút gọn phục vụ kiểm duyệt viên Chrome Web Store)*:
 
 ```markdown
 # Privacy Policy for TimeLab Chrome Extension
+Last Updated: October 1, 2026
 
-**Last Updated:** October 1, 2026  
-**Effective Date:** October 1, 2026
+TimeLab ("the extension") is a local-first developer productivity tool designed for GitLab users. 
 
-TimeLab ("we", "our", or "the extension") is committed to protecting your privacy. This Privacy Policy explains our practices regarding data collection, usage, and disclosure when you use the TimeLab Chrome Extension.
-
-### 1. 100% Local-First Architecture
-TimeLab is designed from the ground up as a **local-first** application. All data processing, metric calculations, timesheet audits, and note/task storage occur exclusively on your local device within your web browser.
-
-### 2. Information We Do NOT Collect
-- We do **NOT** collect, store, transmit, or sell any personal information.
-- We do **NOT** use tracking cookies, analytics SDKs (e.g. Google Analytics), error reporting services (e.g. Sentry), or external telemetry tools.
-- We do **NOT** operate any remote backend servers or databases that receive your data.
-- We do **NOT** log or monitor your web browsing activity.
-
-### 3. Handling of Authentication Credentials
-- To interact with GitLab, TimeLab requires a Personal Access Token provided by you.
-- Your Personal Access Token is saved strictly in your browser's local storage (`chrome.storage.local`).
-- Your token is **only** used to authenticate HTTPS requests directly between your browser and your configured GitLab server (e.g., `gitlab.com` or your company's self-hosted GitLab instance).
-- Your token is **never** sent to any third party, developer server, or external service.
-
-### 4. Permissions Usage
-- **Storage:** Persists your settings, token, cached issue IDs, notes, and to-do lists locally.
-- **Alarms & Notifications:** Schedules and displays local alerts for check-in/out and end-of-day KPI task reminders.
-- **Scripting & Host Permissions (`<all_urls>`):** Enables in-page features (such as the KPI Summary button) on public `gitlab.com` as well as user-specified enterprise self-hosted GitLab domains. Network requests are made strictly and exclusively to the user-configured GitLab server URL.
-- **Tabs:** Opens the TimeLab full-screen dashboard, Kanban window, and notepad tabs.
-
-### 5. Third-Party Libraries
-All vendor libraries used by TimeLab (specifically Chart.js and ExcelJS) are packaged offline inside the extension. The extension makes **zero** calls to remote Content Delivery Networks (CDNs) or external script providers.
-
-### 6. User Rights & Data Control
-You maintain complete control over your data:
-- You can export all your local tasks and settings to a JSON file at any time.
-- You can import previously saved data.
-- You can immediately delete your token and session data by clicking the "Log out" button in the extension popup.
-- Uninstalling TimeLab from Google Chrome permanently deletes all extension data stored on your device.
-
-### 7. Changes to This Privacy Policy
-We may update this Privacy Policy from time to time. Any changes will be posted in this repository and updated in the Chrome Web Store listing.
-
-### 8. Contact Us
-If you have any questions or concerns regarding this Privacy Policy or the security practices of TimeLab, please open an issue on our official GitHub repository or contact the developer at:
-- **Developer:** notepower2k1
-- **Email:** contact.notepower2k1@gmail.com
+1. LOCAL-FIRST PROCESSING: All data, settings, personal access tokens, notes, and task lists are stored strictly in local browser storage (chrome.storage.local).
+2. NO DATA COLLECTION: We do not operate any tracking servers, analytics services, or external databases. No user data, web history, or telemetry is ever collected, stored, or transmitted to the developer or any third party.
+3. CREDENTIAL SECURITY: Your GitLab Personal Access Token is used solely to authenticate direct HTTPS requests between your browser and your designated GitLab server. It is never transmitted anywhere else.
+4. PERMISSIONS: Permissions (storage, alarms, notifications, scripting, host permissions) are used strictly and exclusively for local storage, workday reminders, desktop alerts, and in-page GitLab issue summary features.
+5. USER CONTROL: Users can log out, export, or permanently delete all local data at any time by uninstalling the extension.
 ```
 
 ---
