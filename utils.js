@@ -282,8 +282,8 @@ function getAvailableMonths(storedTasks = [], storedMRs = [], storedKpi = [], la
     // 2. Quét toàn bộ ngày tháng trong dữ liệu đã lưu
     const allItems = [...(storedTasks || []), ...(storedMRs || []), ...(storedKpi || [])];
     allItems.forEach(item => {
-        const dateStr = item?.addedAt || item?.createAt || item?.startDate || item?.dueDate || item?.closeDate;
-        if (dateStr) {
+        const addMonthIfValid = (dateStr) => {
+            if (!dateStr) return;
             const iso = parseToIsoDate(dateStr);
             if (iso && iso.length >= 7) {
                 const ym = iso.slice(0, 7);
@@ -292,6 +292,21 @@ function getAvailableMonths(storedTasks = [], storedMRs = [], storedKpi = [], la
                     monthSet.add(ym);
                 }
             }
+        };
+
+        addMonthIfValid(item?.createdAt);
+        addMonthIfValid(item?.created_at);
+        addMonthIfValid(item?.closedAt);
+        addMonthIfValid(item?.startDate);
+        addMonthIfValid(item?.dueDate);
+        addMonthIfValid(item?.closeDate);
+        addMonthIfValid(item?.addedAt);
+        addMonthIfValid(item?.createAt);
+
+        if (Array.isArray(item?.timelogs)) {
+            item.timelogs.forEach(tl => {
+                addMonthIfValid(tl?.spentAt || tl?.spent_at);
+            });
         }
     });
 
@@ -311,6 +326,8 @@ function getAvailableMonths(storedTasks = [], storedMRs = [], storedKpi = [], la
         };
     });
 }
+
+const getAllMonthForSelect = getAvailableMonths;
 
 function isDateInWeek(dateStr, startStr, endStr) {
     const iso = parseToIsoDate(dateStr);
@@ -353,25 +370,49 @@ function matchesFilter(itemDateStr, filterVal, selectedMonth, customStart = null
     return true;
 }
 
+function getItemOriginDate(item) {
+    if (!item) return '';
+    return parseToIsoDate(item.createdAt || item.created_at || item.addedAt || item.createAt || item.startDate);
+}
+
+function getItemCloseDate(item) {
+    if (!item) return '';
+    return parseToIsoDate(item.closedAt || item.closeDate || item.mergedAt);
+}
+
 function isItemActiveInWeek(item, startIso, endIso) {
     if (!item) return false;
-    const addedIso = parseToIsoDate(item.addedAt || item.createAt);
-    if (!addedIso) return false;
 
-    // 1. Tạo trong tuần này
-    if (addedIso >= startIso && addedIso <= endIso) {
+    // 1. Timelogs in week: if item.timelogs has any timelog with spentAt in [startIso, endIso]
+    if (Array.isArray(item.timelogs) && item.timelogs.length > 0) {
+        const hasTimelogInWeek = item.timelogs.some(tl => {
+            const spentIso = parseToIsoDate(tl?.spentAt || tl?.spent_at);
+            return spentIso && spentIso >= startIso && spentIso <= endIso;
+        });
+        if (hasTimelogInWeek) return true;
+    }
+
+    const originIso = getItemOriginDate(item);
+    const closeIso = getItemCloseDate(item);
+
+    // 2. Created in week
+    if (originIso && originIso >= startIso && originIso <= endIso) {
         return true;
     }
 
-    // 2. Tạo trước tuần này nhưng chưa đóng, hoặc đóng trong/sau tuần này
-    if (addedIso < startIso) {
-        const closeIso = parseToIsoDate(item.closeDate);
+    // 3. Closed in week
+    if (closeIso && closeIso >= startIso && closeIso <= endIso) {
+        return true;
+    }
+
+    // 4. Carry-over conditions: originIso < startIso
+    if (originIso && originIso < startIso) {
         const isClosed = (item.state && ['closed', 'merged'].includes(String(item.state).toLowerCase())) || !!closeIso;
-
-        // Nếu chưa đóng -> kéo sang tuần này
-        if (!isClosed) return true;
-
-        // Nếu có ngày đóng, ngày đóng phải >= ngày bắt đầu tuần này
+        // Open carry-over
+        if (!isClosed) {
+            return true;
+        }
+        // Closed during/after week
         if (closeIso && closeIso >= startIso) {
             return true;
         }
@@ -382,44 +423,21 @@ function isItemActiveInWeek(item, startIso, endIso) {
 
 function isItemCarryOver(item, weekStartIso) {
     if (!item || !weekStartIso) return false;
-    const addedIso = parseToIsoDate(item.addedAt || item.createAt);
-    return !!(addedIso && addedIso < weekStartIso);
+    const originIso = getItemOriginDate(item);
+    return !!(originIso && originIso < weekStartIso);
 }
 
 function isItemActiveInFilter(item, filterVal, selectedMonth, customStart = null, customEnd = null) {
     if (!item) return false;
-    const addedIso = parseToIsoDate(item.addedAt || item.createAt);
-    if (!addedIso) return false;
 
     if (filterVal === 'current_week') {
         const cw = getCurrentWeekRange();
         return isItemActiveInWeek(item, cw.start, cw.end);
     }
 
-    if (filterVal === 'all_month') {
-        // Tạo trong tháng này
-        if (addedIso.startsWith(selectedMonth)) {
-            return true;
-        }
-        // Hoặc tạo trước tháng này nhưng chưa đóng trước ngày đầu tháng
-        const monthStartIso = `${selectedMonth}-01`;
-        if (addedIso < monthStartIso) {
-            const closeIso = parseToIsoDate(item.closeDate);
-            const isClosed = (item.state && ['closed', 'merged'].includes(String(item.state).toLowerCase())) || !!closeIso;
-            if (!isClosed) return true;
-            if (closeIso && closeIso >= monthStartIso) return true;
-        }
-        return false;
-    }
-
-    if (filterVal.startsWith('week:')) {
+    if (filterVal && filterVal.startsWith('week:')) {
         const parts = filterVal.split(':');
         return isItemActiveInWeek(item, parts[1], parts[2]);
-    }
-
-    if (filterVal.startsWith('day:')) {
-        const targetDay = filterVal.replace('day:', '');
-        return addedIso === targetDay;
     }
 
     if (filterVal === 'custom_range') {
@@ -427,6 +445,62 @@ function isItemActiveInFilter(item, filterVal, selectedMonth, customStart = null
         const s = customStart || '2000-01-01';
         const e = customEnd || '2099-12-31';
         return isItemActiveInWeek(item, s, e);
+    }
+
+    const originIso = getItemOriginDate(item);
+    const closeIso = getItemCloseDate(item);
+
+    if (filterVal === 'all_month') {
+        // Created in month
+        if (originIso && originIso.startsWith(selectedMonth)) {
+            return true;
+        }
+        // Closed in month
+        if (closeIso && closeIso.startsWith(selectedMonth)) {
+            return true;
+        }
+        // Has timelogs in month
+        if (Array.isArray(item.timelogs) && item.timelogs.length > 0) {
+            const hasTimelogInMonth = item.timelogs.some(tl => {
+                const iso = parseToIsoDate(tl?.spentAt || tl?.spent_at);
+                return iso && iso.startsWith(selectedMonth);
+            });
+            if (hasTimelogInMonth) return true;
+        }
+        // Created before month and still open (or closed >= `${selectedMonth}-01`)
+        const monthStartIso = `${selectedMonth}-01`;
+        if (originIso && originIso < monthStartIso) {
+            const isClosed = (item.state && ['closed', 'merged'].includes(String(item.state).toLowerCase())) || !!closeIso;
+            if (!isClosed) return true;
+            if (closeIso && closeIso >= monthStartIso) return true;
+        }
+        return false;
+    }
+
+    if (filterVal && filterVal.startsWith('day:')) {
+        const targetDay = filterVal.replace('day:', '');
+        // Has timelog on target day
+        if (Array.isArray(item.timelogs) && item.timelogs.length > 0) {
+            const hasTimelogOnDay = item.timelogs.some(tl => {
+                const iso = parseToIsoDate(tl?.spentAt || tl?.spent_at);
+                return iso === targetDay;
+            });
+            if (hasTimelogOnDay) return true;
+        }
+        // Closed on target day
+        if (closeIso && closeIso === targetDay) {
+            return true;
+        }
+        // Created on target day
+        if (originIso && originIso === targetDay) {
+            return true;
+        }
+        // Fallback: parseToIsoDate(item.addedAt || item.createAt) === targetDay
+        const fallbackIso = parseToIsoDate(item.addedAt || item.createAt);
+        if (fallbackIso && fallbackIso === targetDay) {
+            return true;
+        }
+        return false;
     }
 
     return true;
@@ -1014,8 +1088,11 @@ if (typeof window !== 'undefined') {
     window.getWeeksOfMonth = getWeeksOfMonth;
     window.getRecentMonths = getRecentMonths;
     window.getAvailableMonths = getAvailableMonths;
+    window.getAllMonthForSelect = getAllMonthForSelect;
     window.isDateInWeek = isDateInWeek;
     window.matchesFilter = matchesFilter;
+    window.getItemOriginDate = getItemOriginDate;
+    window.getItemCloseDate = getItemCloseDate;
     window.isItemActiveInWeek = isItemActiveInWeek;
     window.isItemCarryOver = isItemCarryOver;
     window.isItemActiveInFilter = isItemActiveInFilter;
@@ -1045,6 +1122,13 @@ const _rootScope = typeof window !== 'undefined'
         : (typeof globalThis !== 'undefined' ? globalThis : null));
 
 if (_rootScope) {
+    _rootScope.getItemOriginDate = getItemOriginDate;
+    _rootScope.getItemCloseDate = getItemCloseDate;
+    _rootScope.getAllMonthForSelect = getAllMonthForSelect;
+    _rootScope.getAvailableMonths = getAvailableMonths;
+    _rootScope.isItemActiveInWeek = isItemActiveInWeek;
+    _rootScope.isItemCarryOver = isItemCarryOver;
+    _rootScope.isItemActiveInFilter = isItemActiveInFilter;
     _rootScope.sanitizeGitlabUrl = sanitizeGitlabUrl;
     _rootScope.getTokenGenerationUrl = getTokenGenerationUrl;
     _rootScope.getGitlabServerUrl = getGitlabServerUrl;
@@ -1070,8 +1154,11 @@ if (typeof module !== 'undefined' && module.exports) {
         getWeeksOfMonth,
         getRecentMonths,
         getAvailableMonths,
+        getAllMonthForSelect,
         isDateInWeek,
         matchesFilter,
+        getItemOriginDate,
+        getItemCloseDate,
         isItemActiveInWeek,
         isItemCarryOver,
         isItemActiveInFilter,
