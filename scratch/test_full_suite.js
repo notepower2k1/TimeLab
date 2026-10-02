@@ -80,6 +80,7 @@ runSubSuite('GitLab Issue Summary Modal Subsystem', 'scratch/test_content_issue_
 runSubSuite('End-of-Day Unadded Tasks Warning Subsystem', 'scratch/test_unadded_tasks_warning.js');
 runSubSuite('Multilingual (VI / EN) i18n Subsystem', 'scratch/test_i18n.js');
 runSubSuite('Custom GitLab Server URL & Dynamic Routing Subsystem', 'scratch/test_gitlab_server_url.js');
+runSubSuite('GitLab Lifecycle & Timelogs Tracking Subsystem', 'scratch/test_lifecycle_timetracking.js');
 
 // --- 2. EXTENSION-WIDE JS SYNTAX VALIDATION ---
 printHeader('EXTENSION-WIDE JAVASCRIPT SYNTAX VALIDATION');

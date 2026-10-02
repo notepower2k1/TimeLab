@@ -1788,7 +1788,7 @@ if (typeof document !== 'undefined') {
                     const carryBadge = document.createElement("span");
                     carryBadge.className = "badge-carryover";
                     carryBadge.textContent = "🔄 " + getStatusBadgeText('carryOver');
-                    const originDate = item.addedAt ? formatDate(parseToIsoDate(item.addedAt)) : '';
+                    const originDate = (item.createdAt || item.addedAt) ? formatDate(parseToIsoDate(item.createdAt || item.addedAt)) : '';
                     const isEn = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof getLanguage === 'function' && getLanguage() === 'en');
                     carryBadge.title = isEn
                         ? `Work item carried over from previous week${originDate ? ` (Created on ${originDate})` : ''}`
@@ -2048,7 +2048,7 @@ if (typeof document !== 'undefined') {
                     const carryBadge = document.createElement("span");
                     carryBadge.className = "badge-carryover";
                     carryBadge.textContent = "🔄 " + getStatusBadgeText('carryOver');
-                    const originDate = item.addedAt ? formatDate(parseToIsoDate(item.addedAt)) : '';
+                    const originDate = (item.createdAt || item.addedAt) ? formatDate(parseToIsoDate(item.createdAt || item.addedAt)) : '';
                     carryBadge.title = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof getLanguage === 'function' && getLanguage() === 'en')
                         ? `Merge Request carried over from previous week${originDate ? ` (Created on ${originDate})` : ''}`
                         : `Merge Request chuyển tiếp từ tuần trước${originDate ? ` (Tạo ngày ${originDate})` : ''}`;
@@ -3324,6 +3324,7 @@ if (typeof document !== 'undefined') {
             let webUrl = issuable.webUrl;
             let parentTitle = '';
             let parentUrl = '';
+            let widgetTimeTracking = null;
 
             if (itemType === 'merge_request' || isMergeRequest) {
                 esimateTimeTotal = issuable.timeEstimate;
@@ -3347,7 +3348,7 @@ if (typeof document !== 'undefined') {
                 }
 
                 // Time tracking widget
-                const widgetTimeTracking = widgets?.find(widget => widget.type === "TIME_TRACKING");
+                widgetTimeTracking = widgets?.find(widget => widget.type === "TIME_TRACKING");
                 if (widgetTimeTracking) {
                     esimateTimeTotal = widgetTimeTracking.timeEstimate;
                     spentTimeTotal = widgetTimeTracking.totalTimeSpent;
@@ -3425,6 +3426,17 @@ if (typeof document !== 'undefined') {
                 }
             }
 
+            const timelogNodes = widgetTimeTracking?.timelogs?.nodes || issuable.timelogs?.nodes || [];
+            const timelogs = timelogNodes.map(node => ({
+                id: node.id,
+                timeSpent: node.timeSpent || 0,
+                timeSpentHours: node.timeSpent ? parseFloat((node.timeSpent / 3600).toFixed(2)) : 0,
+                spentAt: (node.spentAt || '').slice(0, 10),
+                spentAtRaw: node.spentAt,
+                user: node.user ? { id: node.user.id, name: node.user.name, username: node.user.username } : null,
+                note: node.note?.body || ''
+            }));
+
             const returnData = {
                 id: id,
                 taskUrl: webUrl || projectUrl,
@@ -3438,6 +3450,9 @@ if (typeof document !== 'undefined') {
                 progress: progressStatus,
                 groupName: groupName,
                 addedAt: createAt,
+                createdAt: issuable.createdAt || issuable.created_at || createAt,
+                closedAt: issuable.closedAt || issuable.mergedAt || (closeDateFormat ? closeDateFormat : ''),
+                timelogs: timelogs,
                 title: title || '',
                 parentTitle: parentTitle,
                 parentUrl: parentUrl,
@@ -3795,6 +3810,7 @@ query mergeRequestTimeTracking($fullPath: ID!, $iid: String!) {
       title
       description
       state
+      createdAt
       mergedAt
       closedAt
       webUrl
@@ -4037,13 +4053,28 @@ function calculateMonthlyTimesheet(items = [], selYear, selMonth, refDate = new 
     const itemsByDate = new Map();
     (items || []).forEach(item => {
         if (!item) return;
-        const rawDate = item.dateIso || item.addedAt || item.createAt || item.spentAt;
-        const dateIso = normalizeDateToIso(rawDate);
-        if (!dateIso) return;
-        if (!itemsByDate.has(dateIso)) {
-            itemsByDate.set(dateIso, []);
+        if (Array.isArray(item.timelogs) && item.timelogs.length > 0) {
+            item.timelogs.forEach(tl => {
+                const dateIso = normalizeDateToIso(tl.spentAt);
+                if (!dateIso) return;
+                if (!itemsByDate.has(dateIso)) {
+                    itemsByDate.set(dateIso, []);
+                }
+                itemsByDate.get(dateIso).push({
+                    ...item,
+                    spent: tl.timeSpentHours !== undefined ? tl.timeSpentHours : (tl.timeSpent ? tl.timeSpent / 3600 : 0),
+                    timelogId: tl.id
+                });
+            });
+        } else {
+            const rawDate = item.dateIso || item.addedAt || item.createAt || item.spentAt || item.createdAt;
+            const dateIso = normalizeDateToIso(rawDate);
+            if (!dateIso) return;
+            if (!itemsByDate.has(dateIso)) {
+                itemsByDate.set(dateIso, []);
+            }
+            itemsByDate.get(dateIso).push(item);
         }
-        itemsByDate.get(dateIso).push(item);
     });
 
     const isEn = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof window !== 'undefined' && window.i18n && window.i18n.getLanguage && window.i18n.getLanguage() === 'en');
@@ -4155,6 +4186,7 @@ function calculateMonthlyTimesheet(items = [], selYear, selMonth, refDate = new 
         totalWorkingDays,
         totalTargetHours,
         totalSpentHours,
+        totalHours: totalSpentHours,
         totalLeaveDays,
         deficitDaysCount,
         achievementRate
@@ -4708,14 +4740,19 @@ function calculateMonthlyChartData(items = [], selYear, selMonth, refDate = new 
         if (!item) return;
 
         // Determine if item belongs to the selected month
-        const rawDate = item.dateIso || item.addedAt || item.createAt || item.spentAt || item.startDate;
+        const rawDate = item.dateIso || item.addedAt || item.createAt || item.spentAt || item.startDate || item.createdAt;
         const itemIso = normalizeDateToIso(rawDate);
         const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+        const firstWeekStart = weeks.length > 0 ? weeks[0].start : '';
+        const lastWeekEnd = weeks.length > 0 ? weeks[weeks.length - 1].end : '';
+        const hasTimelogs = Array.isArray(item.timelogs) && item.timelogs.length > 0;
+        const hasTimelogInMonth = hasTimelogs && item.timelogs.some(tl => {
+            const tlIso = normalizeDateToIso(tl.spentAt);
+            return tlIso && (tlIso.startsWith(monthPrefix) || (firstWeekStart && lastWeekEnd && tlIso >= firstWeekStart && tlIso <= lastWeekEnd));
+        });
 
         // If item has a date, verify it's within the month or month weeks
-        if (itemIso) {
-            const firstWeekStart = weeks.length > 0 ? weeks[0].start : '';
-            const lastWeekEnd = weeks.length > 0 ? weeks[weeks.length - 1].end : '';
+        if (itemIso && !hasTimelogInMonth) {
             const inMonthRange = itemIso.startsWith(monthPrefix) || (firstWeekStart && lastWeekEnd && itemIso >= firstWeekStart && itemIso <= lastWeekEnd);
             if (!inMonthRange) return;
         }
@@ -4750,12 +4787,32 @@ function calculateMonthlyChartData(items = [], selYear, selMonth, refDate = new 
         weeks.forEach((w, idx) => {
             const matchByWeekNum = (item.weekNum !== undefined && item.weekNum === w.weekNum);
             const matchByDate = Boolean(itemIso && itemIso >= w.start && itemIso <= w.end);
-            if (matchByWeekNum || matchByDate) {
-                estimateHours[idx] += est;
-                spentHours[idx] += sp;
+            const matchByTimelog = hasTimelogs && item.timelogs.some(tl => {
+                const tlIso = normalizeDateToIso(tl.spentAt);
+                return Boolean(tlIso && tlIso >= w.start && tlIso <= w.end);
+            });
+            if (matchByWeekNum || matchByDate || matchByTimelog) {
+                if (matchByWeekNum || matchByDate) {
+                    estimateHours[idx] += est;
+                }
+                if (!hasTimelogs && (matchByWeekNum || matchByDate)) {
+                    spentHours[idx] += sp;
+                }
                 weekItemsMap[idx].push(item);
             }
         });
+
+        if (hasTimelogs) {
+            item.timelogs.forEach(tl => {
+                const logIso = normalizeDateToIso(tl.spentAt);
+                const logH = tl.timeSpentHours !== undefined ? tl.timeSpentHours : (tl.timeSpent ? tl.timeSpent / 3600 : 0);
+                weeks.forEach((w, idx) => {
+                    if (logIso && logIso >= w.start && logIso <= w.end) {
+                        spentHours[idx] += logH;
+                    }
+                });
+            });
+        }
     });
 
     // Format numbers
