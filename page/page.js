@@ -44,6 +44,24 @@ function _tr(key, params = {}, fallback = '') {
     return fallback || key;
 }
 
+if (typeof isItemLate === 'undefined' && typeof require === 'function') {
+    try {
+        const _utils = require('../utils.js');
+        if (_utils && typeof _utils.isItemLate === 'function') {
+            globalThis.isItemLate = _utils.isItemLate;
+            globalThis.getItemProgressStatus = _utils.getItemProgressStatus;
+        }
+    } catch (e) {
+        try {
+            const _utils = require('./utils.js');
+            if (_utils && typeof _utils.isItemLate === 'function') {
+                globalThis.isItemLate = _utils.isItemLate;
+                globalThis.getItemProgressStatus = _utils.getItemProgressStatus;
+            }
+        } catch (e2) {}
+    }
+}
+
 function isWidosoftGitlab(url) {
     if (!url || typeof url !== 'string') return false;
     return url.toLowerCase().includes('gitlab.widosoft');
@@ -455,7 +473,8 @@ if (typeof document !== 'undefined') {
                 return;
             }
 
-            if (it.progress === 'Trễ hạn') counts.late++;
+            const isLate = (typeof isItemLate === 'function') ? isItemLate(it) : (it.progress === 'Trễ hạn' || it.isLate === true);
+            if (isLate) counts.late++;
             if (!it.estimate || Number(it.estimate) === 0 || !it.spent || Number(it.spent) === 0) counts.missing_time++;
             if (!it.startDate || !it.dueDate) counts.missing_date++;
             if ((it.reopenTotal || 0) > 0) counts.reopen++;
@@ -1408,7 +1427,8 @@ if (typeof document !== 'undefined') {
                     if (!item.dueDate) totalTaskNoDueDate += 1;
                     if (est === 0) totalTaskNoEstimate += 1;
                     if (spent === 0) totalTaskNoSpent += 1;
-                    if (item.progress === 'Đúng hạn') totalTaskInTime += 1;
+                    const isLate = (typeof isItemLate === 'function') ? isItemLate(item) : (item.progress === 'Trễ hạn' || item.isLate === true);
+                    if (!isLate) totalTaskInTime += 1;
                     if (item.reopenTotal > 0) reopenCount += 1;
                 }
 
@@ -1578,7 +1598,7 @@ if (typeof document !== 'undefined') {
                 }
                 if (it.isMR) return false; // Không áp dụng tiêu chí lọc nhanh cho Merge Request
                 if (currentQuickFilter === 'late') {
-                    return it.progress === 'Trễ hạn';
+                    return (typeof isItemLate === 'function') ? isItemLate(it) : (it.progress === 'Trễ hạn' || it.isLate === true);
                 }
                 if (currentQuickFilter === 'missing_time') {
                     return !it.estimate || Number(it.estimate) === 0 || !it.spent || Number(it.spent) === 0;
@@ -1902,13 +1922,12 @@ if (typeof document !== 'undefined') {
                 // 11. Tiến độ
                 const progTd = document.createElement("td");
                 progTd.className = "text-center";
-                let progDisplay = item.progress || '';
-                if (item.progress === 'Đúng hạn') {
-                    progDisplay = _tr('statusInTime', {}, 'Đúng hạn');
-                    progTd.classList.add('text-success');
-                } else if (item.progress === 'Trễ hạn') {
-                    progDisplay = _tr('statusLate', {}, 'Trễ hạn');
+                const isLate = (typeof isItemLate === 'function') ? isItemLate(item) : (item.progress === 'Trễ hạn' || item.isLate === true);
+                let progDisplay = isLate ? _tr('statusLate', {}, 'Trễ hạn') : _tr('statusInTime', {}, 'Đúng hạn');
+                if (isLate) {
                     progTd.classList.add('text-danger');
+                } else {
+                    progTd.classList.add('text-success');
                 }
                 progTd.textContent = progDisplay;
                 row.appendChild(progTd);
@@ -2275,7 +2294,7 @@ if (typeof document !== 'undefined') {
                     : baseFiltered.filter(it => {
                         if (currentQuickFilter === 'mr') return !!it.isMR;
                         if (it.isMR) return false;
-                        if (currentQuickFilter === 'late') return it.progress === 'Trễ hạn';
+                        if (currentQuickFilter === 'late') return (typeof isItemLate === 'function') ? isItemLate(it) : (it.progress === 'Trễ hạn' || it.isLate === true);
                         if (currentQuickFilter === 'missing_time') return !it.estimate || Number(it.estimate) === 0 || !it.spent || Number(it.spent) === 0;
                         if (currentQuickFilter === 'missing_date') return !it.startDate || !it.dueDate;
                         if (currentQuickFilter === 'reopen') return (it.reopenTotal || 0) > 0;
@@ -3400,10 +3419,10 @@ if (typeof document !== 'undefined') {
                 title = storedData.taskTitle;
             }
 
-            let progressStatus = "Đúng hạn";
-            if (closeDateFormat && dueDate) {
-                progressStatus = compareDate(closeDateFormat, dueDate) >= 0 ? "Đúng hạn" : "Trễ hạn";
-            }
+            const isLate = (typeof isItemLate === 'function')
+                ? isItemLate({ state: issuable.state, closedAt: issuable.closedAt || issuable.mergedAt, closeDate: closeDateFormat, dueDate: dueDate })
+                : (closeDateFormat && dueDate ? compareDate(closeDateFormat, dueDate) < 0 : false);
+            const progressStatus = isLate ? "Trễ hạn" : "Đúng hạn";
 
             // Activity log (mainly for reopens, which we'll skip for MRs for now as it's complex)
             let reopenTotal = 0;
@@ -3448,6 +3467,7 @@ if (typeof document !== 'undefined') {
                 reopenTotal: reopenTotal,
                 type: taskType,
                 progress: progressStatus,
+                isLate: isLate,
                 groupName: groupName,
                 addedAt: createAt,
                 createdAt: issuable.createdAt || issuable.created_at || createAt,
@@ -4671,7 +4691,8 @@ function calculateWeeklyKpiScore(weekItems, week = null, refDate = new Date()) {
     let deficitCount = 0;
 
     weekItems.forEach(item => {
-        if (item.isLate === true || item.progress === 'Trễ hạn') {
+        const isLate = (typeof isItemLate === 'function') ? isItemLate(item) : (item.isLate === true || item.progress === 'Trễ hạn');
+        if (isLate) {
             lateCount++;
         }
         if (item.isReopen === true || item.reopened === true || (item.reopenTotal && item.reopenTotal > 0)) {
@@ -4769,7 +4790,7 @@ function calculateMonthlyChartData(items = [], selYear, selMonth, refDate = new 
         // inTimeCount: completed on time (item.isLate === false && item.state !== 'opened')
         // lateCount: late items (item.isLate === true)
         // openCount: open items (item.state === 'opened' || item.isOpen)
-        const isLate = (item.isLate === true) || (item.progress === 'Trễ hạn');
+        const isLate = (typeof isItemLate === 'function') ? isItemLate(item) : ((item.isLate === true) || (item.progress === 'Trễ hạn'));
         const isOpen = (item.state === 'opened') || (item.isOpen === true) || (item.progress === 'Đang thực hiện');
 
         if (isLate) {
@@ -5180,7 +5201,7 @@ function renderMonthlyKpiSummaryCards(monthItems = [], selYear, selMonth, timesh
             plannedCount++;
         }
 
-        const isLate = item.isLate === true || item.progress === 'Trễ hạn';
+        const isLate = (typeof isItemLate === 'function') ? isItemLate(item) : (item.isLate === true || item.progress === 'Trễ hạn');
         if (isLate) {
             lateCount++;
         } else {
@@ -5439,6 +5460,8 @@ if (typeof window !== 'undefined') {
     window.getStatusBadgeText = getStatusBadgeText;
     window.isWidosoftGitlab = isWidosoftGitlab;
     window.updateExportButtonsVisibility = updateExportButtonsVisibility;
+    window.isItemLate = typeof isItemLate === 'function' ? isItemLate : (window.isItemLate || null);
+    window.getItemProgressStatus = typeof getItemProgressStatus === 'function' ? getItemProgressStatus : (window.getItemProgressStatus || null);
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -5460,7 +5483,9 @@ if (typeof module !== 'undefined' && module.exports) {
         openDayDetailModal,
         initDayDetailModal,
         isWidosoftGitlab,
-        updateExportButtonsVisibility
+        updateExportButtonsVisibility,
+        isItemLate: typeof isItemLate === 'function' ? isItemLate : null,
+        getItemProgressStatus: typeof getItemProgressStatus === 'function' ? getItemProgressStatus : null
     };
 }
 

@@ -198,4 +198,56 @@ console.log('--- Running GitLab Lifecycle & Timelogs Tracking Unit Tests ---');
     console.log('   ✔ Passed: calculateMonthlyChartData assigns spent hours to weeks by timelogs');
 })();
 
+// =========================================================================
+// TEST SUITE 5: Open Overdue Tasks & isItemLate Evaluation
+// =========================================================================
+(() => {
+    console.log('▶ [TEST 5] isItemLate & Progress Status for Open Overdue Tasks...');
+
+    const refDate = new Date('2026-10-04'); // Reference today = 2026-10-04
+
+    // 1. Closed on time: closedAt 2026-09-25, dueDate 2026-09-28
+    const closedOnTime = {
+        state: 'closed',
+        closedAt: '2026-09-25T10:00:00Z',
+        dueDate: '28/09/2026'
+    };
+    assert.strictEqual(utils.isItemLate(closedOnTime, refDate), false, 'Closed on time should not be late');
+    assert.strictEqual(utils.getItemProgressStatus(closedOnTime, refDate), 'Đúng hạn');
+
+    // 2. Closed late: closedAt 2026-09-30, dueDate 2026-09-28
+    const closedLate = {
+        state: 'closed',
+        closedAt: '2026-09-30T10:00:00Z',
+        dueDate: '2026-09-28'
+    };
+    assert.strictEqual(utils.isItemLate(closedLate, refDate), true, 'Closed after due date should be late');
+    assert.strictEqual(utils.getItemProgressStatus(closedLate, refDate), 'Trễ hạn');
+
+    // 3. Open task with future dueDate: dueDate 2026-10-10 (refDate 2026-10-04)
+    const openFutureDue = {
+        state: 'opened',
+        dueDate: '10/10/2026'
+    };
+    assert.strictEqual(utils.isItemLate(openFutureDue, refDate), false, 'Open task with future due date should not be late');
+    assert.strictEqual(utils.getItemProgressStatus(openFutureDue, refDate), 'Đúng hạn');
+
+    // 4. Open task with PAST dueDate: dueDate 2026-09-28 (refDate 2026-10-04)
+    const openOverdue = {
+        state: 'opened',
+        dueDate: '28/09/2026'
+    };
+    assert.strictEqual(utils.isItemLate(openOverdue, refDate), true, 'Open task with past due date MUST BE LATE (Trễ hạn)');
+    assert.strictEqual(utils.getItemProgressStatus(openOverdue, refDate), 'Trễ hạn');
+
+    // 5. Open task without dueDate
+    const openNoDueDate = {
+        state: 'opened'
+    };
+    assert.strictEqual(utils.isItemLate(openNoDueDate, refDate), false, 'Open task without due date should not be late');
+    assert.strictEqual(utils.getItemProgressStatus(openNoDueDate, refDate), 'Đúng hạn');
+
+    console.log('   ✔ Passed: isItemLate accurately identifies open overdue tasks');
+})();
+
 console.log('\n--- ALL GITLAB LIFECYCLE & TIMETRACKING TESTS PASSED! 🎉 ---');

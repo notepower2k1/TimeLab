@@ -506,6 +506,43 @@ function isItemActiveInFilter(item, filterVal, selectedMonth, customStart = null
     return true;
 }
 
+function isItemLate(item, refDate = new Date()) {
+    if (!item || typeof item !== 'object') return false;
+
+    const closeIso = parseToIsoDate(item.closedAt || item.closeDate || item.mergedAt);
+    const dueIso = parseToIsoDate(item.dueDate);
+
+    const isClosed = (item.state && ['closed', 'merged'].includes(String(item.state).toLowerCase())) || !!closeIso;
+
+    if (isClosed) {
+        if (closeIso && dueIso) {
+            return closeIso > dueIso;
+        }
+        if (item.isLate === true || item.progress === 'Trễ hạn') {
+            return true;
+        }
+        return false;
+    }
+
+    // Open item (!isClosed)
+    if (dueIso) {
+        const refIso = (typeof normalizeDateToIso === 'function')
+            ? normalizeDateToIso(refDate)
+            : (parseToIsoDate(refDate) || (refDate instanceof Date ? `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, '0')}-${String(refDate.getDate()).padStart(2, '0')}` : String(refDate).slice(0, 10)));
+        return refIso > dueIso;
+    }
+
+    if (item.isLate === true || item.progress === 'Trễ hạn') {
+        return true;
+    }
+
+    return false;
+}
+
+function getItemProgressStatus(item, refDate = new Date()) {
+    return isItemLate(item, refDate) ? 'Trễ hạn' : 'Đúng hạn';
+}
+
 function getWeeksForRange(startIso, endIso) {
     if (!startIso || !endIso) return [];
     if (startIso > endIso) {
@@ -1113,6 +1150,8 @@ if (typeof window !== 'undefined') {
     window.getTokenGenerationUrl = getTokenGenerationUrl;
     window.getGitlabServerUrl = getGitlabServerUrl;
     window.isWidosoftGitlab = isWidosoftGitlab;
+    window.isItemLate = isItemLate;
+    window.getItemProgressStatus = getItemProgressStatus;
 }
 
 const _rootScope = typeof window !== 'undefined'
@@ -1133,6 +1172,8 @@ if (_rootScope) {
     _rootScope.getTokenGenerationUrl = getTokenGenerationUrl;
     _rootScope.getGitlabServerUrl = getGitlabServerUrl;
     _rootScope.isWidosoftGitlab = isWidosoftGitlab;
+    _rootScope.isItemLate = isItemLate;
+    _rootScope.getItemProgressStatus = getItemProgressStatus;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -1178,7 +1219,9 @@ if (typeof module !== 'undefined' && module.exports) {
         sanitizeGitlabUrl,
         getTokenGenerationUrl,
         getGitlabServerUrl,
-        isWidosoftGitlab
+        isWidosoftGitlab,
+        isItemLate,
+        getItemProgressStatus
     };
 }
 
