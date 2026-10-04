@@ -2,6 +2,9 @@
   <img src="thumb.jpg" alt="TimeLab - GitLab KPI & Timesheet Tracker" width="100%">
 </p>
 
+[Get extension Now!!!!](https://chromewebstore.google.com/detail/timelab/fioheeakbiikdfdinlakklimplhlicbe?authuser=3&hl=vi)
+
+
 # TimeLab - GitLab KPI, Timesheet & Spent Time Tracker ⏱️📊
 
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-brightgreen.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
@@ -180,11 +183,6 @@ node scratch/build_release_zip.js
 ```
 
 ---
-
-## 👤 Tác giả
-
-- **Thạch Đẹp trai 102**
-- Email / Liên hệ: GitLab cá nhân / nội bộ doanh nghiệp.
 
 ---
 
