@@ -8,7 +8,7 @@
 # TimeLab - GitLab KPI, Timesheet & Spent Time Tracker ⏱️📊
 
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-brightgreen.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![Version](https://img.shields.io/badge/version-1.0.7-blue.svg)](manifest.json)
+[![Version](https://img.shields.io/badge/version-1.0.8-blue.svg)](manifest.json)
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Brave-orange.svg)](https://www.google.com/chrome/)
 [![Language](https://img.shields.io/badge/language-Tiếng%20Việt%20%7C%20English-blueviolet.svg)](i18n.js)
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20Local--First-success.svg)](PRIVACY.md)
@@ -117,7 +117,7 @@ Mỗi Work Item có timelog/lịch sử nằm trong một trang được lấy b
 
 ### Cách 2: Cài đặt từ gói Release Zip
 
-1. Tải file `timelab-extension-v1.0.7.zip` từ thư mục [release/](release/).
+1. Tải file `timelab-extension-v1.0.8.zip` từ thư mục [release/](release/).
 2. Giải nén file zip vào một thư mục cố định trên máy.
 3. Mở `chrome://extensions/` -> bật **Developer mode** -> chọn **Load unpacked** đến thư mục vừa giải nén.
 

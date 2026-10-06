@@ -435,7 +435,7 @@ const { getGitlabServerUrl } = utils;
     const manifestPath = path.resolve(__dirname, '../manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
-    assert.strictEqual(manifest.version, '1.0.7', 'manifest.json version must be bumped to 1.0.7');
+    assert.strictEqual(manifest.version, '1.0.8', 'manifest.json version must be bumped to 1.0.8');
     assert.strictEqual(
         manifest.description,
         'TimeLab - GitLab KPI, Timesheet & Spent Time Tracker',
@@ -454,7 +454,7 @@ const { getGitlabServerUrl } = utils;
     const mrScript = manifest.content_scripts[1];
     assert.ok(mrScript.matches.includes('*://gitlab.com/*/-/merge_requests/*'), 'content_scripts[1] must match gitlab.com MRs');
     assert.ok(mrScript.matches.includes('*://gitlab.widosoft.com/*/-/merge_requests/*'), 'content_scripts[1] must match widosoft MRs');
-    console.log('✔ Passed: manifest.json version 1.0.7, description, and content_scripts static domains verified');
+    console.log('✔ Passed: manifest.json version 1.0.8, description, and content_scripts static domains verified');
 
     // The shared sync client must use the configured GitLab host.
     {
