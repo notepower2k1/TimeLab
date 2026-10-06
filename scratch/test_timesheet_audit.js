@@ -237,5 +237,96 @@ assert.strictEqual(typeof calculateMonthlyTimesheet, 'function', 'calculateMonth
     console.log('✔ Passed: Edge cases (date formats, string spent, leap year) test');
 }
 
-console.log('\n--- ALL TIMESHEET AUDIT TESTS PASSED ---');
+// Manual overtime is independent of leave and must survive the existing day-save flow.
+(async () => {
+    const { getLeaveDays, openDayDetailModal, initDayDetailModal } = require('../page/page.js');
+    const originalDocument = global.document;
+    const originalChrome = global.chrome;
+    const originalWindow = global.window;
+    let stored = {};
+    let saveDay;
+    let leaveType = 'full';
+    const controls = {
+        dayDetailModal: { style: {}, addEventListener() {} },
+        modalDayOvertime: { checked: false },
+        saveLeaveDayBtn: { addEventListener(event, handler) { saveDay = handler; } },
+        monthSelect: { value: '2026-09' }
+    };
+    global.window = {};
+    global.chrome = { storage: { local: {
+        get(keys, callback) {
+            const result = structuredClone(stored);
+            if (callback) callback(result);
+            return Promise.resolve(result);
+        },
+        set(data, callback) {
+            stored = { ...stored, ...structuredClone(data) };
+            if (callback) callback();
+            return Promise.resolve();
+        }
+    } } };
+    global.document = {
+        getElementById: id => controls[id] || null,
+        querySelector: () => ({ value: leaveType })
+    };
+    try {
+        const items = [{ addedAt: '2026-09-01', spent: 2 }];
+        const calculate = map => calculateMonthlyTimesheet(items, 2026, 9, new Date(2026, 8, 30), map);
+        assert.strictEqual(calculateMonthlyTimesheet([{ addedAt: '2026-09-01', spent: 10 }], 2026, 9, new Date(2026, 8, 30)).days[0].isOvertime, false, 'Excess hours must not automatically mark overtime');
+        const weekend = calculate({ '2026-09-05': { value: 0, type: 'none', overtime: true } }).days[4];
+        assert.strictEqual(weekend.isOvertime, true);
+        assert.strictEqual(weekend.status, 'weekend');
+        assert.strictEqual(weekend.targetHours, 0);
+        initDayDetailModal();
+        openDayDetailModal(calculate({}).days[0]);
+        assert.strictEqual(controls.modalDayOvertime.checked, false);
+        controls.modalDayOvertime.checked = true;
+        await saveDay();
+        let daysMap = await getLeaveDays();
+        let report = calculate(daysMap);
+        const leaveDay = report.days[0];
+        assert.strictEqual(leaveDay.isOvertime, true);
+        assert.strictEqual(leaveDay.status, 'leave');
+        assert.strictEqual(leaveDay.targetHours, 0);
+        assert.strictEqual(leaveDay.spentHours, 2);
+        openDayDetailModal(leaveDay);
+        assert.strictEqual(controls.modalDayOvertime.checked, true, 'Saved overtime must be restored when the day is reopened');
+
+        // Verify the marker renders beside the existing full-day leave status.
+        global.document = originalDocument;
+        const grid = global.document.getElementById('timesheetCalendarGrid');
+        grid.children = [];
+        renderDailyTimesheet(report);
+        const header = grid.children[0].children[0];
+        assert(header.children.some(child => child.className === 'timesheet-overtime-badge' && child.textContent === '🌙 OT'));
+        assert(!grid.children[1].children[0].children.some(child => child.className === 'timesheet-overtime-badge'));
+        global.document = { getElementById: id => controls[id] || null, querySelector: () => ({ value: leaveType }) };
+
+        controls.modalDayOvertime.checked = false;
+        await saveDay();
+        daysMap = await getLeaveDays();
+        assert.strictEqual(calculate(daysMap).days[0].isOvertime, false);
+        assert.strictEqual(daysMap['2026-09-01'].value, 1, 'Removing overtime must preserve full-day leave');
+
+        leaveType = 'none';
+        controls.modalDayOvertime.checked = true;
+        await saveDay();
+        daysMap = await getLeaveDays();
+        report = calculate(daysMap);
+        assert.strictEqual(report.days[0].isOvertime, true);
+        assert.strictEqual(report.days[0].isLeave, false, 'Overtime on a normal day must not be treated as leave');
+        assert.strictEqual(report.totalTargetHours, calculate({}).totalTargetHours);
+        assert.strictEqual(report.totalSpentHours, calculate({}).totalSpentHours);
+
+        controls.modalDayOvertime.checked = false;
+        await saveDay();
+        assert.strictEqual((await getLeaveDays())['2026-09-01'], undefined);
+        console.log('✔ Passed: Manual overtime persists, renders, toggles independently of leave, and preserves hours');
+        console.log('\n--- ALL TIMESHEET AUDIT TESTS PASSED ---');
+    } finally {
+        global.document = originalDocument;
+        global.chrome = originalChrome;
+        global.window = originalWindow;
+    }
+})().catch(error => { console.error(error); process.exitCode = 1; });
 

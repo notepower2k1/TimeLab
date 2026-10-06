@@ -51,7 +51,7 @@
                     await removeIdFromStorage(MERGE_ITEM_KEY, mergeRequestId);
                     addedLinks.delete(mergeRequestId);
                 } else {
-                    const today = new Date().toLocaleString();
+                    const today = new Date().toISOString();
                     const titleEl = document.querySelector('h1.title, [data-testid="mr-title"], .issue-details .title');
                     let mrTitle = titleEl ? titleEl.innerText.trim() : '';
                     if (!mrTitle && document.title) {
@@ -95,6 +95,9 @@
     processTasks();
 
     async function addIdToStorage(key, id, href, createAt, extra = {}) {
+        if (typeof updateTrackedItems === 'function' && chrome.runtime?.sendMessage) {
+            return updateTrackedItems(key, [{ id, href, createAt, ...extra }]);
+        }
         const items = await getStoredIds(key);
         const existingIdx = items.findIndex(item => item.id === id);
         if (existingIdx === -1) {

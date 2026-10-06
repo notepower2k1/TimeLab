@@ -240,7 +240,7 @@ function extractTaskIdentifier(itemOrHref) {
         iid = id;
     }
 
-    const normalizedHref = href ? href.replace(/\/+$/, '').toLowerCase() : '';
+    const normalizedHref = href ? href.replace(/\/work_items\//, '/issues/').split(/[?#]/)[0].replace(/\/+$/, '').toLowerCase() : '';
     return { id, iid, href, normalizedHref };
 }
 
@@ -255,11 +255,9 @@ function isTaskInList(list, taskOrId, href = '') {
 
     const items = Array.isArray(list) ? list : (list instanceof Set ? Array.from(list) : []);
     return items.some(item => {
-        if (!item) return false;
+        if (!item || item.autoSyncIgnored) return false;
         const current = extractTaskIdentifier(item);
-        if (target.normalizedHref && current.normalizedHref && target.normalizedHref === current.normalizedHref) {
-            return true;
-        }
+        if (target.normalizedHref && current.normalizedHref) return target.normalizedHref === current.normalizedHref;
         if (target.iid && current.iid && target.iid === current.iid) {
             return true;
         }
@@ -1529,7 +1527,7 @@ function batchAddTasksToStorage(tasks, parentInfo = {}, currentStored = []) {
                 list.push({
                     id: strId,
                     href: task.href || '',
-                    createAt: new Date().toLocaleString(),
+                    createAt: new Date().toISOString(),
                     parentTitle,
                     parentUrl,
                     parentIid,
@@ -1986,10 +1984,12 @@ function openSummaryModal(parentInfo = {}, preloadedTasks = null, doc = (typeof 
                 if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
                     const currentStored = (typeof getStoredIds === 'function') ? await getStoredIds('WorkItemIds') : [];
                     const { updatedList } = batchAddTasksToStorage(tasks, safeParentInfo, currentStored);
-                    await chrome.storage.local.set({ ['WorkItemIds']: updatedList });
-                    currentStoredWorkItemIds = updatedList;
+                    const storedList = typeof updateTrackedItems === 'function' && chrome.runtime?.sendMessage
+                        ? await updateTrackedItems('WorkItemIds', updatedList.filter(item => !isTaskInList(currentStored, item)))
+                        : (await chrome.storage.local.set({ WorkItemIds: updatedList }), updatedList);
+                    currentStoredWorkItemIds = storedList;
                     if (typeof window !== 'undefined') {
-                        window._storedWorkItemIds = updatedList;
+                        window._storedWorkItemIds = storedList;
                     }
                 }
                 addAllBtn.innerText = _tr('addedAllToKpiSuccess');
@@ -2189,6 +2189,12 @@ function openSummaryModal(parentInfo = {}, preloadedTasks = null, doc = (typeof 
 }
 
 async function removeTaskFromStorage(key, taskOrId, href = '') {
+    if (typeof updateTrackedItems === 'function' && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        const task = typeof taskOrId === 'object' ? taskOrId : { id: taskOrId, href };
+        if (task.href || task.taskUrl) return updateTrackedItems(key, [], [task]);
+        const stored = await getStoredIds(key);
+        return updateTrackedItems(key, [], stored.filter(item => String(item.id) === String(taskOrId)));
+    }
     const target = extractTaskIdentifier(typeof taskOrId === 'object' ? taskOrId : { id: taskOrId, href });
     const items = (typeof getStoredIds === 'function') ? await getStoredIds(key) : [];
     const filtered = items.filter(item => {
@@ -2211,6 +2217,9 @@ async function removeTaskFromStorage(key, taskOrId, href = '') {
 }
 
 async function addIdToStorage(key, id, href, createAt, extra = {}) {
+    if (typeof updateTrackedItems === 'function' && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        return updateTrackedItems(key, [{ id: String(id || ''), href, createAt, ...extra }]);
+    }
     const items = (typeof getStoredIds === 'function') ? await getStoredIds(key) : [];
     const target = extractTaskIdentifier({ id, href });
     const existingIdx = items.findIndex(item => {
@@ -2358,7 +2367,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
             if (isCurrentlyAdded) {
                 storedItemsCache = await removeTaskFromStorage(WORK_ITEM_KEY, task);
             } else {
-                const today = new Date().toLocaleString();
+                const today = new Date().toISOString();
                 storedItemsCache = await addIdToStorage(WORK_ITEM_KEY, task.id, task.href, today, {
                     parentTitle: task.parentTitle || '',
                     parentUrl: task.parentUrl || '',
@@ -2448,7 +2457,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
                     if (isCurrentlyAdded) {
                         storedItemsCache = await removeTaskFromStorage(WORK_ITEM_KEY, { id: workItemId, iid: childIid, href });
                     } else {
-                        const today = new Date().toLocaleString();
+                        const today = new Date().toISOString();
                         const parentInfo = getParentIssueInfo();
                         storedItemsCache = await addIdToStorage(WORK_ITEM_KEY, workItemId, href, today, {
                             parentTitle: parentInfo.parentTitle,
@@ -2596,7 +2605,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
                 if (isCurrentlyAdded) {
                     storedItemsCache = await removeTaskFromStorage(WORK_ITEM_KEY, { id: wid, href: info.href });
                 } else {
-                    const today = new Date().toLocaleString();
+                    const today = new Date().toISOString();
                     storedItemsCache = await addIdToStorage(WORK_ITEM_KEY, wid, info.href, today, {
                         parentTitle: info.parentTitle || '',
                         parentUrl: info.parentUrl || '',
@@ -2721,7 +2730,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
                     }
                 });
                 if (updated) {
-                    await chrome.storage.local.set({ [WORK_ITEM_KEY]: items });
+                    if (typeof updateTrackedItems === 'function' && chrome.runtime?.sendMessage) {
+                        await updateTrackedItems(WORK_ITEM_KEY, items.filter(item => currentTasks.has(item.id)));
+                    } else await chrome.storage.local.set({ [WORK_ITEM_KEY]: items });
                 }
             } catch (err) {
                 console.error('Error backfilling parent info:', err);

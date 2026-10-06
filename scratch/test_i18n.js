@@ -69,14 +69,14 @@ console.log(`✔ Passed: 100% Dictionary Parity between VI and EN (${viKeys.leng
 console.log('\n--- 3. Required Category Coverage Verification ---');
 const requiredKeys = [
     // Navigation & Tabs
-    'tabHome', 'tabNotes', 'tabTodo', 'tabTools', 'tabWorkItems', 'tabAnalytics', 'tabWeek', 'tabMonth',
+    'tabHome', 'tabNotes', 'tabTodo', 'tabTools', 'tabWorkItems', 'tabAnalytics', 'tabMonth',
     // Auth & Login
     'welcomeTitle', 'welcomeDesc', 'tokenPlaceholder', 'connectBtn', 'tutorialBtn', 'logoutBtn', 'tokenRequired', 'connectFailed',
     // Banner & Unadded Tasks
-    'unaddedBannerTitle', 'viewDetails', 'hideDetails', 'addAllToKpi', 'addSingleTask',
+    'syncSettingsTitle', 'syncNow', 'syncLast', 'syncReady', 'syncHoursHint',
     // Check-in/out Card
     'checkinCardTitle', 'checkinLabel', 'checkoutLabel', 'workdayBadge', 'snoozeLabel', 'snooze5m', 'snooze10m', 'snooze15m', 'snoozeNone',
-    'urlLabel', 'urlPlaceholder', 'testSoundBtn', 'saveSettingsBtn', 'saveSettingsSuccess', 'kpiReminderLabel', 'kpiReminderBefore', 'minutesUnit',
+    'urlLabel', 'urlPlaceholder', 'testSoundBtn', 'saveSettingsBtn', 'saveSettingsSuccess', 'minutesUnit',
     // Tools
     'storageTitle', 'noteWindowBtn', 'noteTabBtn', 'todoWindowBtn', 'todoTabBtn', 'exportBtn', 'importBtn', 'openDashboardBtn',
     // Kanban Board
@@ -87,12 +87,12 @@ const requiredKeys = [
     // KPI Dashboard
     'pageTitle', 'filterWeek', 'filterMonth', 'filterAll', 'kpiHealthScore', 'onTimeRate', 'attitudeScore', 'volumeScore', 'qualityScore',
     'tableTasks', 'tableWorkItemName', 'tableParentIssue', 'tableStartDate', 'tableDueDate', 'tableClosedDate',
-    'tableEst', 'tableSpent', 'tableDiff', 'tableStatus', 'tableAction', 'statusDoing', 'statusDone', 'statusCarryOver',
+    'tableEst', 'tableSpent', 'tableLifetimeSpent', 'tableDiff', 'tableStatus', 'tableAction', 'statusDoing', 'statusDone', 'statusCarryOver',
     'timesheetTitle', 'timesheetStandardHours', 'timesheetOvertime', 'timesheetLate',
     // GitLab In-Page Summary
     'summaryBtn', 'summaryModalTitle', 'metricTotalTasks', 'metricTotalEst', 'metricTotalSpent', 'metricDiff', 'metricOnTimeRate', 'refreshBtn', 'addAllToKpiModal',
     // Desktop Notifications
-    'notifCheckinTitle', 'notifCheckinMsg', 'notifCheckoutTitle', 'notifCheckoutMsg', 'notifKpiAlertTitle', 'notifKpiAlertMsg'
+    'notifCheckinTitle', 'notifCheckinMsg', 'notifCheckoutTitle', 'notifCheckoutMsg'
 ];
 
 const missingRequired = requiredKeys.filter(k => !(k in viDict));
@@ -107,12 +107,12 @@ assert.strictEqual(i18n.t('connectBtn', null, 'en'), 'Connect Now');
 
 // Parameter interpolation
 assert.strictEqual(
-    i18n.t('unaddedBannerTitle', { count: 5 }, 'vi'),
-    'Bạn có 5 task tạo hôm nay chưa thêm vào KPI!'
+    i18n.t('syncLast', { time: '10:30' }, 'vi'),
+    'Sync thường lần cuối: 10:30'
 );
 assert.strictEqual(
-    i18n.t('unaddedBannerTitle', { count: 5 }, 'en'),
-    'You have 5 task(s) created today not yet added to KPI!'
+    i18n.t('syncLast', { time: '10:30' }, 'en'),
+    'Last synced: 10:30'
 );
 
 // Fallback to EN if missing in requested lang
@@ -334,22 +334,24 @@ const mockStorage = {
 
     // 8.4 User Screen Header & Tabs Declarative Attributes
     assert.ok(popupHtml.includes('data-i18n-title="logoutBtn"'), 'Logout button must have data-i18n-title="logoutBtn"');
-    assert.ok(popupHtml.includes('data-i18n="tabWeek"'), 'Tab navigation must have data-i18n="tabWeek"');
+    assert.ok(!popupHtml.includes('data-i18n="tabWeek"'), 'Popup must not display a weekly KPI tab');
+    assert.ok(popupHtml.includes('class="tab-btn active" data-tab="month-tab"'), 'Monthly KPI must be the default popup tab');
     assert.ok(popupHtml.includes('data-i18n="tabMonth"'), 'Tab navigation must have data-i18n="tabMonth"');
+    assert.ok(!popupHtml.includes('month-estimate-time'), 'Popup must not aggregate whole-task estimates as a monthly target');
+    assert.strictEqual(i18n.t('tableEst', null, 'vi'), 'Estimate toàn task (h)');
+    assert.strictEqual(i18n.t('tableSpent', null, 'en'), 'Spent in period (h)');
+    assert.strictEqual(i18n.t('tableLifetimeSpent', null, 'vi'), 'Spent toàn task (h)');
+    assert.strictEqual(i18n.t('tableLifetimeSpent', null, 'en'), 'Lifetime spent (h)');
+    assert.strictEqual(i18n.t('tableDiff', null, 'en'), 'Whole-task variance');
     assert.ok(popupHtml.includes('data-i18n="tabTools"'), 'Tab navigation must have data-i18n="tabTools"');
 
     // 8.5 Unadded KPI Banner Declarative Attributes
-    assert.ok(popupHtml.includes('data-i18n="viewDetails"'), 'Toggle unadded list button must have data-i18n="viewDetails"');
-    assert.ok(popupHtml.includes('data-i18n="addAllToKpi"'), 'Add all unadded button must have data-i18n="addAllToKpi"');
 
     // 8.6 Check-in Card Language Switcher & Controls
     assert.ok(popupHtml.includes('id="appLangSelect"'), 'Check-in settings card must include select #appLangSelect');
     assert.ok(popupHtml.includes('data-i18n="languageLabel"'), 'Check-in settings card must have label with data-i18n="languageLabel"');
     assert.ok(popupHtml.includes('data-i18n="checkinLabel"'), 'Check-in row must have data-i18n="checkinLabel"');
     assert.ok(popupHtml.includes('data-i18n="checkoutLabel"'), 'Check-out row must have data-i18n="checkoutLabel"');
-    assert.ok(popupHtml.includes('data-i18n="kpiReminderLabel"'), 'KPI reminder row must have data-i18n="kpiReminderLabel"');
-    assert.ok(popupHtml.includes('data-i18n="kpiReminderBefore"'), 'KPI reminder row must have data-i18n="kpiReminderBefore"');
-    assert.ok(popupHtml.includes('data-i18n="minutesUnit"'), 'KPI reminder row must have data-i18n="minutesUnit"');
     assert.ok(popupHtml.includes('data-i18n="snoozeLabel"'), 'Snooze row must have data-i18n="snoozeLabel"');
     assert.ok(popupHtml.includes('data-i18n="urlLabel"'), 'URL row must have data-i18n="urlLabel"');
     assert.ok(popupHtml.includes('data-i18n="testSoundBtn"'), 'Test sound button must have data-i18n="testSoundBtn"');
@@ -525,65 +527,7 @@ const mockStorage = {
         );
     }
 
-    // 10.5 Unadded KPI Alert in VI & EN
-    {
-        const mockFetch = async () => ({
-            ok: true,
-            json: async () => [
-                { id: 99, iid: 1, title: 'New Task', web_url: 'https://gitlab.com/grp/prj/-/issues/1', created_at: '2026-10-01T08:00:00Z' }
-            ]
-        });
-
-        // VI test
-        bgStorage = {
-            appLanguage: 'vi',
-            AccessToken: 'token123',
-            gitlabUrl: 'https://gitlab.com',
-            checkOutTime: '18:00',
-            kpiReminderMinutesBefore: 15,
-            kpiReminderEnabled: true,
-            WorkItemIds: [],
-            kpiReminderState: {}
-        };
-        bgNotifications = [];
-        const triggerTime = new Date('2026-10-01T17:45:00');
-        await background.checkUnaddedKpiTasksReminder(triggerTime, mockFetch);
-        assert.strictEqual(bgNotifications.length, 1);
-        assert.strictEqual(bgNotifications[0].id, 'kpi-unadded-alert');
-        assert.ok(
-            bgNotifications[0].title.includes(i18n.t('notifKpiAlertTitle', null, 'vi')),
-            'Unadded KPI alert title should be localized in VI'
-        );
-        assert.ok(
-            bgNotifications[0].message.includes('1 task tạo hôm nay chưa thêm'),
-            'Unadded KPI alert message should be in Vietnamese'
-        );
-
-        // EN test
-        bgStorage = {
-            appLanguage: 'en',
-            AccessToken: 'token123',
-            gitlabUrl: 'https://gitlab.com',
-            checkOutTime: '18:00',
-            kpiReminderMinutesBefore: 15,
-            kpiReminderEnabled: true,
-            WorkItemIds: [],
-            kpiReminderState: {}
-        };
-        bgNotifications = [];
-        await background.checkUnaddedKpiTasksReminder(triggerTime, mockFetch);
-        assert.strictEqual(bgNotifications.length, 1);
-        assert.strictEqual(bgNotifications[0].id, 'kpi-unadded-alert');
-        assert.ok(
-            bgNotifications[0].title.includes(i18n.t('notifKpiAlertTitle', null, 'en')),
-            'Unadded KPI alert title should be localized in EN'
-        );
-        assert.ok(
-            bgNotifications[0].message.includes('1 task(s) created today not yet added'),
-            'Unadded KPI alert message should be in English'
-        );
-    }
-    console.log('✔ Passed: background.js dispatches properly localized notifications for Check-in, Check-out, and KPI alerts');
+    console.log('✔ Passed: Localized Check-in and Check-out notifications remain available');
 
     // 11. Verify popup.js Localization Logic
     console.log('\n--- 11. Testing popup/popup.js Localization Logic ---');
@@ -593,101 +537,14 @@ const mockStorage = {
     assert.ok(popupJsContent.includes('applyI18n'), 'popup.js must call applyI18n');
     assert.ok(popupJsContent.includes('setLanguage'), 'popup.js must call setLanguage when user toggles language');
 
-    // Test renderUnaddedKpiBanner with language argument
-    const popupModule = require('../popup/popup.js');
-    function makeElement(tagName = 'div') {
-        let _children = [];
-        const attrs = {};
-        return {
-            tagName,
-            style: {},
-            get children() { return _children; },
-            set children(val) { _children = val; },
-            textContent: '',
-            get innerHTML() { return ''; },
-            set innerHTML(val) {
-                if (val === '') _children = [];
-            },
-            setAttribute(k, v) { attrs[k] = String(v); },
-            getAttribute(k) { return attrs[k]; },
-            appendChild(c) { _children.push(c); }
-        };
+    assert.ok(!popupHtml.includes('unaddedKpiBanner'), 'Old KPI reminder banner must be removed');
+    for (const key of ['syncSettingsTitle', 'syncEnabledLabel', 'syncIntervalLabel', 'syncNow']) {
+        assert.ok(popupHtml.includes(`data-i18n="${key}"`));
+        assert.notStrictEqual(i18n.t(key, null, 'vi'), key);
+        assert.notStrictEqual(i18n.t(key, null, 'en'), key);
     }
-
-    const testMockDoc = {
-        elements: {
-            unaddedKpiBanner: makeElement('div'),
-            unaddedKpiTitle: makeElement('span'),
-            unaddedKpiItemsList: makeElement('div'),
-            toggleUnaddedListBtn: makeElement('button'),
-            addAllUnaddedKpiBtn: makeElement('button')
-        },
-        getElementById(id) {
-            return this.elements[id] || null;
-        },
-        createElement(tag) {
-            return makeElement(tag);
-        }
-    };
-
-    // Render with 2 tasks in English
-    popupModule.renderUnaddedKpiBanner(
-        [
-            { id: '1', iid: '1', title: 'Task A' },
-            { id: '2', iid: '2', title: 'Task B' }
-        ],
-        testMockDoc,
-        'en'
-    );
-    assert.ok(
-        testMockDoc.elements.unaddedKpiTitle.textContent.includes('2 task(s)') ||
-        testMockDoc.elements.unaddedKpiTitle.textContent.includes('2 task'),
-        'Unadded KPI banner title in EN should be in English'
-    );
-    assert.strictEqual(
-        testMockDoc.elements.unaddedKpiItemsList.children[0].children[1].textContent,
-        '+ Add',
-        'Add single task button in EN should show "+ Add"'
-    );
-
-    // Render with 1 task in Vietnamese
-    popupModule.renderUnaddedKpiBanner(
-        [
-            { id: '1', iid: '1', title: 'Task A' }
-        ],
-        testMockDoc,
-        'vi'
-    );
-    assert.ok(
-        testMockDoc.elements.unaddedKpiTitle.textContent.includes('1 task tạo hôm nay'),
-        'Unadded KPI banner title in VI should be in Vietnamese'
-    );
-    assert.strictEqual(
-        testMockDoc.elements.unaddedKpiItemsList.children[0].children[1].textContent,
-        '+ Thêm',
-        'Add single task button in VI should show "+ Thêm"'
-    );
-
-    // Render without language argument when active language is English
-    i18n.setLanguage('en');
-    popupModule.renderUnaddedKpiBanner(
-        [
-            { id: '1', iid: '1', title: 'Task A' }
-        ],
-        testMockDoc
-    );
-    assert.ok(
-        testMockDoc.elements.unaddedKpiTitle.textContent.includes('task(s) created today not yet added') ||
-        testMockDoc.elements.unaddedKpiTitle.textContent.includes('not yet added to KPI'),
-        'Unadded KPI banner should resolve to English via getLanguage() when lang argument is omitted'
-    );
-    assert.strictEqual(
-        testMockDoc.elements.unaddedKpiItemsList.children[0].children[1].textContent,
-        '+ Add',
-        'Add single task button should show "+ Add" when lang argument is omitted and current language is EN'
-    );
-
-    console.log('✔ Passed: popup.js initializes i18n, handles language switching, and localizes dynamic elements');
+    assert.strictEqual(i18n.t('syncLast', { time: '10:30' }, 'en'), 'Last synced: 10:30');
+    console.log('✔ Passed: Popup sync UI is localized in VI and EN');
 
     // =========================================================================
     // TASK 3: DASHBOARD, KANBAN, NOTEPAD & GITLAB INTEGRATION TESTS
@@ -721,7 +578,7 @@ const mockStorage = {
     assert.ok(pageHtml.includes('data-i18n="chartEstSpentTitle"'), 'page.html must have chartEstSpentTitle');
     assert.ok(pageHtml.includes('data-i18n="chartTaskTypeTitle"'), 'page.html must have chartTaskTypeTitle');
     assert.ok(pageHtml.includes('data-i18n="chartTaskStatusTitle"'), 'page.html must have chartTaskStatusTitle');
-    assert.ok(pageHtml.includes('data-i18n="chartKpiTrendTitle"'), 'page.html must have chartKpiTrendTitle');
+    assert.ok(!pageHtml.includes('chartKpiTrend'), 'Dashboard must not display a weekly KPI chart');
 
     const pageJsContent = fs.readFileSync(path.resolve(__dirname, '../page/page.js'), 'utf8');
     assert.ok(pageJsContent.includes('initLanguage'), 'page.js must call initLanguage');

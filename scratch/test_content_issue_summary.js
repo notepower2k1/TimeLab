@@ -1426,11 +1426,11 @@ class MockDocument {
         assert.deepStrictEqual(extractTaskIdentifier(2067), { id: '2067', iid: '2067', href: '', normalizedHref: '' });
         assert.deepStrictEqual(
             extractTaskIdentifier('https://gitlab.widosoft.com/group/proj/-/work_items/2067'),
-            { id: '', iid: '2067', href: 'https://gitlab.widosoft.com/group/proj/-/work_items/2067', normalizedHref: 'https://gitlab.widosoft.com/group/proj/-/work_items/2067' }
+            { id: '', iid: '2067', href: 'https://gitlab.widosoft.com/group/proj/-/work_items/2067', normalizedHref: 'https://gitlab.widosoft.com/group/proj/-/issues/2067' }
         );
         assert.deepStrictEqual(
             extractTaskIdentifier({ id: 'legacy-12345', href: 'https://gitlab.widosoft.com/group/proj/-/work_items/2067' }),
-            { id: 'legacy-12345', iid: '2067', href: 'https://gitlab.widosoft.com/group/proj/-/work_items/2067', normalizedHref: 'https://gitlab.widosoft.com/group/proj/-/work_items/2067' }
+            { id: 'legacy-12345', iid: '2067', href: 'https://gitlab.widosoft.com/group/proj/-/work_items/2067', normalizedHref: 'https://gitlab.widosoft.com/group/proj/-/issues/2067' }
         );
         assert.deepStrictEqual(
             extractTaskIdentifier({ id: '2067', iid: '2067' }),

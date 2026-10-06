@@ -456,53 +456,16 @@ const { getGitlabServerUrl } = utils;
     assert.ok(mrScript.matches.includes('*://gitlab.widosoft.com/*/-/merge_requests/*'), 'content_scripts[1] must match widosoft MRs');
     console.log('✔ Passed: manifest.json version 1.0.7, description, and content_scripts static domains verified');
 
-    // 11. Testing dynamic API routing in background checkUnaddedKpiTasksReminder
-    console.log('\n--- 11. Testing dynamic API routing in background.js ---');
+    // The shared sync client must use the configured GitLab host.
     {
-        let fetchCalls = [];
-        const mockFetch = async (url, opts) => {
-            fetchCalls.push({ url, opts });
-            return {
-                ok: true,
-                json: async () => []
-            };
-        };
-
-        global.chrome = {
-            storage: {
-                local: {
-                    get: async () => ({
-                        AccessToken: 'valid-test-token',
-                        gitlabServerUrl: 'https://gitlab.custom-host.vn:8443',
-                        kpiReminderEnabled: true,
-                        checkOutTime: '18:00',
-                        kpiReminderMinutesBefore: 15,
-                        kpiReminderState: {},
-                        WorkItemIds: []
-                    }),
-                    set: async () => {}
-                }
-            },
-            action: {
-                setBadgeText: () => {},
-                setBadgeBackgroundColor: () => {}
-            },
-            notifications: {
-                create: () => {}
-            },
-            runtime: {
-                getURL: (p) => p
-            }
-        };
-
-        const testTime = new Date('2026-10-01T17:50:00');
-        await bg.checkUnaddedKpiTasksReminder(testTime, mockFetch);
-        assert.strictEqual(fetchCalls.length, 1, 'Should call fetch once for today issues');
-        assert.ok(
-            fetchCalls[0].url.startsWith('https://gitlab.custom-host.vn:8443/api/v4/issues'),
-            `API URL should start with custom gitlabServerUrl, received: ${fetchCalls[0].url}`
-        );
-        console.log('✔ Passed: checkUnaddedKpiTasksReminder dynamically queries custom gitlabServerUrl');
+        const sync = require('../sync.js');
+        const calls = [];
+        const client = sync.createGitlabClient('https://gitlab.custom-host.vn:8443', 'test-token', {
+            fetchFn: async url => { calls.push(url); return { ok: true, json: async () => [] }; }
+        });
+        await client.request('/api/v4/issues?scope=created_by_me');
+        assert(calls[0].startsWith('https://gitlab.custom-host.vn:8443/api/v4/issues'));
+        console.log('✔ Passed: Shared sync client routes requests to the configured GitLab host');
     }
 
     // 12. Testing Zero Hardcoded widosoft URLs in page/page.js and content_issue.js
@@ -511,7 +474,9 @@ const { getGitlabServerUrl } = utils;
     const pageJsContent = fs.readFileSync(pageJsPath, 'utf8');
 
     assert.ok(!pageJsContent.includes('https://gitlab.widosoft.com'), 'page/page.js must have zero hardcoded https://gitlab.widosoft.com');
-    assert.ok(pageJsContent.includes('${gitlabServerUrl}/api/graphql') || pageJsContent.includes('`${gitlabServerUrl}/api/graphql`'), 'page/page.js must use dynamic gitlabServerUrl for GraphQL');
+    const syncJsContent = fs.readFileSync(path.resolve(__dirname, '../sync.js'), 'utf8');
+    assert.ok(syncJsContent.includes('new URL(path, gitlabServerUrl)'), 'Shared API client must resolve requests against the configured server');
+    assert.ok(!pageJsContent.includes('/api/graphql'), 'Dashboard must render cached sync data instead of fetching task details');
 
     // Test group extraction regex on various domains
     const groupRegex = /https?:\/\/[^\/]+\/[^\/]+\/([^\/]+)\//;
@@ -602,20 +567,16 @@ const { getGitlabServerUrl } = utils;
         // 15.2 Verify page.html markup hides export buttons by default
         const pageHtmlPath = path.resolve(__dirname, '../page/page.html');
         const pageHtml = fs.readFileSync(pageHtmlPath, 'utf8');
-        assert.ok(pageHtml.includes('id="exportWeekKpiBtn"'), 'page.html must contain #exportWeekKpiBtn');
+        assert.ok(!pageHtml.includes('exportWeekKpiBtn'), 'Only monthly KPI export is available');
         assert.ok(pageHtml.includes('id="exportMonthKpiBtn"'), 'page.html must contain #exportMonthKpiBtn');
-        assert.ok(/id=["']exportWeekKpiBtn["'][^>]*style=["'][^"']*display:\s*none/i.test(pageHtml),
-            '#exportWeekKpiBtn must have default style="display: none;"');
         assert.ok(/id=["']exportMonthKpiBtn["'][^>]*style=["'][^"']*display:\s*none/i.test(pageHtml),
             '#exportMonthKpiBtn must have default style="display: none;"');
 
         // 15.3 Verify updateExportButtonsVisibility DOM behavior
         assert.strictEqual(typeof pageMod.updateExportButtonsVisibility, 'function', 'page.js must export updateExportButtonsVisibility');
-        const mockWeekBtn = { style: { display: 'none' } };
         const mockMonthBtn = { style: { display: 'none' } };
         global.document = {
             getElementById: (id) => {
-                if (id === 'exportWeekKpiBtn' || id === 'exportCSVBtn') return mockWeekBtn;
                 if (id === 'exportMonthKpiBtn') return mockMonthBtn;
                 return null;
             }
@@ -623,17 +584,14 @@ const { getGitlabServerUrl } = utils;
 
         // When server is gitlab.widosoft.com -> buttons shown
         pageMod.updateExportButtonsVisibility('https://gitlab.widosoft.com');
-        assert.strictEqual(mockWeekBtn.style.display, '', 'Week export button must be visible for Widosoft');
         assert.strictEqual(mockMonthBtn.style.display, '', 'Month export button must be visible for Widosoft');
 
         // When server is gitlab.com -> buttons hidden
         pageMod.updateExportButtonsVisibility('https://gitlab.com');
-        assert.strictEqual(mockWeekBtn.style.display, 'none', 'Week export button must be hidden for gitlab.com');
         assert.strictEqual(mockMonthBtn.style.display, 'none', 'Month export button must be hidden for gitlab.com');
 
         // When server is custom third-party -> buttons hidden
         pageMod.updateExportButtonsVisibility('https://git.internal-corp.vn');
-        assert.strictEqual(mockWeekBtn.style.display, 'none', 'Week export button must be hidden for generic gitlab');
         assert.strictEqual(mockMonthBtn.style.display, 'none', 'Month export button must be hidden for generic gitlab');
 
         // 15.4 Verify alertOnlyAvailableForWidosoft token

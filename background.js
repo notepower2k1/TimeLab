@@ -3,13 +3,13 @@
  * Handles:
  *   1. Periodic to-do reminder notifications
  *   2. Workday check-in & check-out alert notifications with snooze & URL integration
- *   3. End-of-day unadded KPI tasks reminder with badge and desktop alert
+ *   3. Automatic GitLab task discovery and resumable KPI synchronization
  */
 
 // --- Helper Integration for Utils & i18n ---
 if (typeof importScripts === 'function') {
     try {
-        importScripts('utils.js', 'i18n.js');
+        importScripts('utils.js', 'i18n.js', 'sync.js');
     } catch (e) {
         console.warn('Failed to importScripts:', e);
     }
@@ -17,10 +17,6 @@ if (typeof importScripts === 'function') {
     try {
         const u = require('./utils.js');
         // Assign helpers if not globally present
-        if (typeof getTodayStartIso === 'undefined') global.getTodayStartIso = u.getTodayStartIso;
-        if (typeof filterUnaddedTasks === 'undefined') global.filterUnaddedTasks = u.filterUnaddedTasks;
-        if (typeof evaluateKpiReminderState === 'undefined') global.evaluateKpiReminderState = u.evaluateKpiReminderState;
-        if (typeof fetchTodayCreatedIssues === 'undefined') global.fetchTodayCreatedIssues = u.fetchTodayCreatedIssues;
         if (typeof sanitizeGitlabUrl === 'undefined') global.sanitizeGitlabUrl = u.sanitizeGitlabUrl;
         if (typeof getGitlabServerUrl === 'undefined') global.getGitlabServerUrl = u.getGitlabServerUrl;
 
@@ -31,10 +27,6 @@ if (typeof importScripts === 'function') {
     } catch (e) {}
 }
 
-const _getTodayStartIso = (typeof getTodayStartIso === 'function') ? getTodayStartIso : ((typeof global !== 'undefined' && global.getTodayStartIso) || (typeof require !== 'undefined' && require('./utils.js').getTodayStartIso));
-const _filterUnaddedTasks = (typeof filterUnaddedTasks === 'function') ? filterUnaddedTasks : ((typeof global !== 'undefined' && global.filterUnaddedTasks) || (typeof require !== 'undefined' && require('./utils.js').filterUnaddedTasks));
-const _evaluateKpiReminderState = (typeof evaluateKpiReminderState === 'function') ? evaluateKpiReminderState : ((typeof global !== 'undefined' && global.evaluateKpiReminderState) || (typeof require !== 'undefined' && require('./utils.js').evaluateKpiReminderState));
-const _fetchTodayCreatedIssues = (typeof fetchTodayCreatedIssues === 'function') ? fetchTodayCreatedIssues : ((typeof global !== 'undefined' && global.fetchTodayCreatedIssues) || (typeof require !== 'undefined' && require('./utils.js').fetchTodayCreatedIssues));
 const _sanitizeGitlabUrl = (typeof sanitizeGitlabUrl === 'function') ? sanitizeGitlabUrl : ((typeof global !== 'undefined' && global.sanitizeGitlabUrl) || (typeof require !== 'undefined' && require('./utils.js').sanitizeGitlabUrl));
 const _getGitlabServerUrl = (typeof getGitlabServerUrl === 'function') ? getGitlabServerUrl : ((typeof global !== 'undefined' && global.getGitlabServerUrl) || (typeof require !== 'undefined' && require('./utils.js').getGitlabServerUrl));
 const _t = (typeof t === 'function') ? t : ((typeof global !== 'undefined' && global.t) || ((typeof require !== 'undefined') ? require('./i18n.js').t : (k => k)));
@@ -292,93 +284,57 @@ async function syncDynamicContentScript(serverUrl) {
     }
 }
 
-// --- End-of-Day Unadded KPI Tasks Helper Function ---
+// --- Automatic Task Sync ---
 
-async function checkUnaddedKpiTasksReminder(now = new Date(), customFetch = null) {
-    const data = await chrome.storage.local.get([
-        'AccessToken',
-        'checkOutTime',
-        'checkOutEnabled',
-        'kpiReminderEnabled',
-        'kpiReminderMinutesBefore',
-        'kpiReminderState',
-        'WorkItemIds',
-        'gitlabServerUrl',
-        'gitlabUrl',
-        'appLanguage'
-    ]);
-
-    const lang = resolveLanguage(data.appLanguage);
-
-    const settings = {
-        enabled: data.kpiReminderEnabled !== false,
-        checkOutTime: data.checkOutTime || '18:00',
-        minutesBefore: Number(data.kpiReminderMinutesBefore ?? 15)
-    };
-
-    const currentState = data.kpiReminderState || {};
-    const evalResult = _evaluateKpiReminderState(now, settings, currentState);
-
-    // Always persist day rollover reset if date changed
-    if (evalResult.nextState && evalResult.nextState.lastDate !== currentState.lastDate) {
-        await chrome.storage.local.set({
-            kpiReminderState: {
-                lastDate: evalResult.nextState.lastDate,
-                count: 0,
-                done: false,
-                lastNotified: null
-            }
-        });
-    }
-
-    if (!evalResult.shouldScan) {
-        return;
-    }
-
-    if (!data.AccessToken) {
-        return;
-    }
-
-    const todayStartIso = _getTodayStartIso(now);
-    const rawGitlabUrl = data.gitlabServerUrl || data.gitlabUrl || 'https://gitlab.com';
-    const gitlabUrl = _sanitizeGitlabUrl ? _sanitizeGitlabUrl(rawGitlabUrl) : rawGitlabUrl;
-    const apiIssues = await _fetchTodayCreatedIssues(data.AccessToken, gitlabUrl, todayStartIso, customFetch);
-    const unaddedTasks = _filterUnaddedTasks(apiIssues, data.WorkItemIds || []);
-
-    if (unaddedTasks.length > 0) {
-        await chrome.storage.local.set({ UnaddedTodayTasks: unaddedTasks });
-
-        if (chrome.action && chrome.action.setBadgeText) {
-            chrome.action.setBadgeText({ text: '!' });
-            if (chrome.action.setBadgeBackgroundColor) {
-                chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
-            }
-        }
-
-        if (evalResult.shouldNotify) {
-            const title = _t('notifKpiAlertTitle', null, lang);
-            const message = _t('notifKpiAlertMsg', { count: unaddedTasks.length }, lang);
-            chrome.notifications.create('kpi-unadded-alert', {
-                type: 'basic',
-                iconUrl: chrome.runtime.getURL('icon48.png'),
-                title: title,
-                message: message,
-                priority: 2,
-                requireInteraction: true
-            });
-            // Only persist incremented notification count when notification is actually dispatched
-            await chrome.storage.local.set({ kpiReminderState: evalResult.nextState });
-        }
-    } else {
-        await chrome.storage.local.set({
-            UnaddedTodayTasks: [],
-            kpiReminderState: { ...currentState, done: true }
-        });
-
-        if (chrome.action && chrome.action.setBadgeText) {
-            chrome.action.setBadgeText({ text: '' });
+const syncModule = typeof KpiSync !== 'undefined' ? KpiSync : (typeof require === 'function' ? require('./sync.js') : null);
+let syncRunner;
+let syncReady = Promise.resolve();
+function getSyncRunner() {
+    if (!syncRunner) syncRunner = syncModule.createRunner({ storage: {
+        get: keys => chrome.storage.local.get(keys), set: values => chrome.storage.local.set(values)
+    } });
+    return syncRunner;
+}
+async function recoverSyncState() {
+        const data = await chrome.storage.local.get(['KpiSyncState']);
+        const sources = data.KpiSyncState?.sources || {};
+        const recovered = Object.fromEntries(Object.entries(sources).map(([key, state]) => [key, state?.status === 'running'
+            ? { ...state, status: state.scan || state.pending?.length ? 'pending' : 'ready' } : state]));
+        if (Object.values(sources).some(state => state?.status === 'running')) await chrome.storage.local.set({ KpiSyncState: { ...data.KpiSyncState, sources: recovered } });
+}
+async function configureSyncAlarm() {
+    const data = await chrome.storage.local.get(['KpiSyncSettings', 'KpiSyncState', 'UserProfile', 'gitlabServerUrl', 'gitlabUrl', 'AccessToken']);
+    if (!data.KpiSyncSettings) await chrome.storage.local.set({ KpiSyncSettings: syncModule.settingsOf(data) });
+    const settings = syncModule.settingsOf(data);
+    if (!settings.enabled || !data.AccessToken) await chrome.alarms.clear?.('kpiAutoSync');
+    else {
+        const alarm = await chrome.alarms.get?.('kpiAutoSync');
+        if (!alarm || alarm.periodInMinutes !== settings.intervalMinutes) {
+            await chrome.alarms.create('kpiAutoSync', { periodInMinutes: settings.intervalMinutes });
         }
     }
+    const state = syncModule.stateOf(data);
+    if (state.scan || state.pending?.length) await scheduleSyncContinuation(state);
+}
+async function scheduleSyncContinuation(state) {
+    if (state?.authError || (!state?.scan && !state?.pending?.length)) return;
+    const data = await chrome.storage.local.get(['KpiSyncSettings', 'checkInTime', 'checkOutTime']);
+    if (!syncModule.settingsOf(data).enabled && !state.manual) return;
+    let when = Math.max(Date.now() + 30000, state.retryAt || 0);
+    if (!state.manual && !syncModule.inSyncHours(data, new Date(when))) {
+        const [hour, minute] = (data.checkInTime || '08:30').split(':').map(Number);
+        const next = new Date(when); next.setHours(hour, minute, 0, 0);
+        if (next.getTime() <= when) next.setDate(next.getDate() + 1);
+        while (!isWorkday(next)) next.setDate(next.getDate() + 1);
+        when = next.getTime();
+    }
+    await chrome.alarms.create('kpiSyncContinue', { when });
+}
+async function runTaskSync(options = {}) {
+    await syncReady;
+    const state = await getSyncRunner().run(options);
+    await scheduleSyncContinuation(state);
+    return state;
 }
 
 // --- Lifecycle Event Listeners ---
@@ -407,17 +363,12 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onInstalle
             await chrome.storage.local.set(toSet);
         }
 
-        // Cấu hình mặc định cho Nhắc nhở KPI chưa thêm cuối ngày
-        const kpiDefaults = await chrome.storage.local.get([
-            'kpiReminderEnabled',
-            'kpiReminderMinutesBefore'
-        ]);
-        const kpiToSet = {};
-        if (kpiDefaults.kpiReminderEnabled === undefined) kpiToSet.kpiReminderEnabled = true;
-        if (kpiDefaults.kpiReminderMinutesBefore === undefined) kpiToSet.kpiReminderMinutesBefore = 15;
-        if (Object.keys(kpiToSet).length > 0) {
-            await chrome.storage.local.set(kpiToSet);
-        }
+        // Retire only the old end-of-day reminder state.
+        await chrome.storage.local.remove?.(['UnaddedTodayTasks', 'kpiReminderState', 'kpiReminderEnabled', 'kpiReminderMinutesBefore']);
+        await chrome.notifications?.clear?.('kpi-unadded-alert');
+        chrome.action?.setBadgeText?.({ text: '' });
+        await configureSyncAlarm();
+        runTaskSync().catch(error => console.error('Task sync failed:', error.message));
 
         // Đồng bộ content script động cho domain GitLab tùy chỉnh
         const serverUrlData = await chrome.storage.local.get(['gitlabServerUrl']);
@@ -430,6 +381,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onInstalle
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onStartup) {
     chrome.runtime.onStartup.addListener(async () => {
         chrome.alarms.create("checkTodos", { periodInMinutes: 1 });
+        await configureSyncAlarm();
+        runTaskSync().catch(error => console.error('Task sync failed:', error.message));
         const serverUrlData = await chrome.storage.local.get(['gitlabServerUrl']);
         if (serverUrlData && serverUrlData.gitlabServerUrl) {
             await syncDynamicContentScript(serverUrlData.gitlabServerUrl);
@@ -439,6 +392,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onStartup)
 
 if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener(async (changes, area) => {
+        if (area === 'local' && ['KpiSyncSettings', 'checkInTime', 'checkOutTime', 'AccessToken', 'gitlabServerUrl', 'UserProfile'].some(key => changes[key])) {
+            getSyncRunner().pause();
+            await configureSyncAlarm();
+            runTaskSync({ authChanged: !!(changes.AccessToken || changes.gitlabServerUrl || changes.UserProfile) }).catch(error => console.error('Task sync failed:', error.message));
+        }
         if (area === 'local' && changes.gitlabServerUrl) {
             await syncDynamicContentScript(changes.gitlabServerUrl.newValue);
         }
@@ -446,39 +404,33 @@ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged)
 }
 
 if (typeof chrome !== 'undefined' && chrome.alarms && chrome.alarms.onAlarm) {
-    chrome.alarms.onAlarm.addListener(async (alarm) => {
-        if (alarm.name !== "checkTodos") return;
-
-        // 1. Check Workday Check-in & Check-out Alerts
-    await checkCheckInOutAlerts();
-
-    // 3. Check End-of-Day Unadded KPI Tasks Reminder
-    try {
-        await checkUnaddedKpiTasksReminder();
-    } catch (e) {
-        console.error('Failed to check unadded KPI tasks reminder:', e);
-    }
+    chrome.alarms.onAlarm.addListener(async alarm => {
+        if (alarm.name === 'checkTodos') await checkCheckInOutAlerts();
+        if (alarm.name === 'kpiAutoSync' || alarm.name === 'kpiSyncContinue') {
+            await runTaskSync({ continue: alarm.name === 'kpiSyncContinue' });
+        }
     });
+}
+if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((message, sender, respond) => {
+        if (!['kpi:sync', 'kpi:tracking'].includes(message?.type)) return;
+        const action = message.type === 'kpi:sync'
+            ? runTaskSync({ force: message.force === true, continue: message.continue === true,
+                month: message.force === true ? message.month : undefined })
+            : getSyncRunner().updateItems(message).then(items => ({ items }));
+        action.then(respond, error => respond({ error: error.message }));
+        return true;
+    });
+}
+// Alarms can disappear across updates/restarts; ensure them on each worker startup.
+if (typeof chrome !== 'undefined' && chrome.runtime?.id && chrome.alarms && chrome.storage?.local) {
+    syncReady = recoverSyncState().then(configureSyncAlarm).catch(error => console.error('Sync scheduling failed:', error.message));
 }
 
 // Notification click handler: opens attendance URL, KPI popup, or to-do page
 async function handleNotificationClick(notifId) {
     if (!notifId || typeof notifId !== 'string') return;
-    if (notifId === 'kpi-unadded-alert') {
-        chrome.notifications.clear(notifId);
-        if (chrome.action && typeof chrome.action.openPopup === 'function') {
-            try {
-                const res = chrome.action.openPopup();
-                if (res && typeof res.then === 'function') {
-                    await res;
-                }
-            } catch (err) {
-                chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html') });
-            }
-        } else {
-            chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html') });
-        }
-    } else if (notifId === 'checkin-alert' || notifId === 'checkout-alert' || notifId.startsWith('test-checkin-alert')) {
+    if (notifId === 'checkin-alert' || notifId === 'checkout-alert' || notifId.startsWith('test-checkin-alert')) {
         const stateKey = notifId === 'checkin-alert' ? 'checkInState' : (notifId === 'checkout-alert' ? 'checkOutState' : null);
         const data = await chrome.storage.local.get(['checkInOutUrl', ...(stateKey ? [stateKey] : [])]);
 
@@ -515,7 +467,9 @@ if (typeof module !== 'undefined' && module.exports) {
         evaluateAlertState,
         checkCheckInOutAlerts,
         handleNotificationClick,
-        checkUnaddedKpiTasksReminder,
+        recoverSyncState,
+        configureSyncAlarm,
+        runTaskSync,
         syncDynamicContentScript
     };
 }

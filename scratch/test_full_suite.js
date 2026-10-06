@@ -77,7 +77,7 @@ runSubSuite('Check-in & Check-out Alert Subsystem', 'scratch/test_checkin_checko
 runSubSuite('Notepad Multi-Tab Dual-Mode Subsystem', 'scratch/test_notepad_dual_mode.js');
 runSubSuite('Kanban To-Do Enhancements Subsystem', 'scratch/test_todo_enhancements.js');
 runSubSuite('GitLab Issue Summary Modal Subsystem', 'scratch/test_content_issue_summary.js');
-runSubSuite('End-of-Day Unadded Tasks Warning Subsystem', 'scratch/test_unadded_tasks_warning.js');
+runSubSuite('Automatic Task Sync Subsystem', 'scratch/test_auto_sync.js');
 runSubSuite('Multilingual (VI / EN) i18n Subsystem', 'scratch/test_i18n.js');
 runSubSuite('Custom GitLab Server URL & Dynamic Routing Subsystem', 'scratch/test_gitlab_server_url.js');
 runSubSuite('GitLab Lifecycle & Timelogs Tracking Subsystem', 'scratch/test_lifecycle_timetracking.js');
@@ -90,6 +90,7 @@ const jsFilesToValidate = [
     'page/page.js',
     'utils.js',
     'background.js',
+    'sync.js',
     'content_issue.js',
     'content_request.js',
     'popup/popup.js',
@@ -235,11 +236,13 @@ check('tutorial/tutorial.html exists and has zero remote fonts or scripts', () =
     assert(!tutorialContent.includes('http://') && !tutorialContent.includes('https://fonts.'), 'Must not contain remote font stylesheets');
 });
 
-check('DOM Containers and Warning Banner elements exist in popup/popup.html', () => {
+check('DOM Containers and Sync Settings exist in popup/popup.html', () => {
     const requiredIds = [
-        'unaddedKpiBanner',
-        'addAllUnaddedKpiBtn',
-        'kpiReminderEnabled',
+        'kpiSyncStatus',
+        'kpiAutoSyncEnabled',
+        'kpiSyncInterval',
+        'syncNowBtn',
+        'saveKpiSyncBtn',
         'appLangSelect'
     ];
 
@@ -304,12 +307,11 @@ check('DOM Containers and Tab IDs exist in page/page.html', () => {
     });
 });
 
-check('All 4 Visual Chart Canvas elements exist in page/page.html', () => {
+check('All 3 Visual Chart Canvas elements exist in page/page.html', () => {
     const chartCanvasIds = [
         'chartWeeklyEstSpent',
         'chartTaskType',
-        'chartTaskStatus',
-        'chartKpiTrend'
+        'chartTaskStatus'
     ];
 
     chartCanvasIds.forEach(canvasId => {

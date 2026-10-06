@@ -61,71 +61,16 @@
             </div>
         </header>
 
-        <!-- Cảnh báo task chưa thêm vào KPI cuối ngày -->
-        <div id="unaddedKpiBanner" class="unadded-kpi-banner" style="display: none;">
-            <div class="unadded-kpi-header">
-                <span class="unadded-kpi-icon">⚠️</span>
-                <span id="unaddedKpiTitle" class="unadded-kpi-title">Bạn có task tạo hôm nay chưa thêm vào KPI!</span>
-                <button id="toggleUnaddedListBtn" class="btn-text-sm" type="button" title="Xem danh sách" data-i18n="viewDetails">Chi tiết ▼</button>
-            </div>
-            <div class="unadded-kpi-actions">
-                <button id="addAllUnaddedKpiBtn" class="btn-warning-sm" type="button" data-i18n="addAllToKpi">➕ Thêm tất cả vào KPI</button>
-            </div>
-            <div id="unaddedKpiItemsList" class="unadded-kpi-items-list" style="display: none;"></div>
-        </div>
+        <p id="kpiSyncStatus" class="sync-status" role="status" aria-live="polite"></p>
 
         <!-- Thanh tab -->
         <nav class="tab-nav">
-            <button class="tab-btn active" data-tab="week-tab" data-i18n="tabWeek">📅 Tuần</button>
-            <button class="tab-btn" data-tab="month-tab" data-i18n="tabMonth">📊 Tháng</button>
+            <button class="tab-btn active" data-tab="month-tab" data-i18n="tabMonth">📊 Tháng</button>
             <button class="tab-btn" data-tab="tools-tab" data-i18n="tabTools">🛠️ Công cụ</button>
         </nav>
 
-        <!-- Nội dung Tab 1: Tuần -->
-        <div id="week-tab" class="tab-content active">
-            <div class="stats-card">
-                <div class="stat-header">
-                    <h4 data-i18n="statsWeekTitle">⭐ Thống kê tuần</h4>
-                    <span id="stats-time" class="time-badge"></span>
-                </div>
-
-                <div class="stat-grid">
-                    <div class="stat-item">
-                        <span class="label" data-i18n="statTotalTasks">Tổng Task</span>
-                        <span id="total-tasks" class="value">-</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="label" data-i18n="statEstimate">Estimate</span>
-                        <span id="estimate-time" class="value">-</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="label" data-i18n="statSpent">Spent</span>
-                        <span id="spent-time" class="value">-</span>
-                    </div>
-                </div>
-
-                <div class="progress-section">
-                    <div class="progress-header">
-                        <span class="label"><span data-i18n="progressWeek">Tiến trình tuần:</span> <strong id="estimate-time-total">-</strong></span>
-                    </div>
-                    <div class="progress-bar">
-                        <div id="progress-fill" class="progress-fill"></div>
-                    </div>
-                </div>
-
-                <div class="progress-section">
-                    <div class="progress-header">
-                        <span class="label"><span data-i18n="progressDaily">Tiến trình ngày:</span> <strong id="estimate-time-daily">-</strong></span>
-                    </div>
-                    <div class="progress-bar accent">
-                        <div id="progress-fill-daily" class="progress-fill"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Nội dung Tab 2: Tháng -->
-        <div id="month-tab" class="tab-content">
+        <!-- Nội dung Tab 1: Tháng -->
+        <div id="month-tab" class="tab-content active">
             <div class="stats-card">
                 <div class="stat-header">
                     <h4 data-i18n="statsMonthTitle">⭐ Thống kê tháng</h4>
@@ -138,11 +83,7 @@
                         <span id="month-total-tasks" class="value">-</span>
                     </div>
                     <div class="stat-item">
-                        <span class="label" data-i18n="statEstimate">Estimate</span>
-                        <span id="month-estimate-time" class="value">-</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="label" data-i18n="statSpent">Spent</span>
+                        <span class="label" data-i18n="statSpent">Spent trong kỳ</span>
                         <span id="month-spent-time" class="value">-</span>
                     </div>
                 </div>
@@ -166,10 +107,18 @@
                         <div id="month-progress-fill" class="progress-fill"></div>
                     </div>
                 </div>
+                <div class="progress-section">
+                    <div class="progress-header">
+                        <span class="label"><span data-i18n="progressDaily">Tiến trình ngày:</span> <strong id="estimate-time-daily">-</strong></span>
+                    </div>
+                    <div class="progress-bar accent">
+                        <div id="progress-fill-daily" class="progress-fill"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Nội dung Tab 3: Công cụ -->
+        <!-- Nội dung Tab 2: Công cụ -->
         <div id="tools-tab" class="tab-content">
             <div class="stats-card">
                 <h4 data-i18n="storageTitle">📦 Bộ nhớ</h4>
@@ -194,6 +143,30 @@
                     <button id="saveServerUrlBtn" class="btn-primary btn-sm" type="button" data-i18n="saveSettingsBtn">💾 Lưu</button>
                 </div>
                 <div id="saveServerUrlMsg" class="save-msg" style="display: none;" data-i18n="serverUrlSaved">✔ Đã lưu GitLab Server URL thành công</div>
+            </div>
+
+            <div class="stats-card">
+                <div class="stat-header"><h4 data-i18n="syncSettingsTitle">🔄 Tự động đồng bộ</h4></div>
+                <div class="checkin-row">
+                    <label class="checkin-toggle-group" for="kpiAutoSyncEnabled">
+                        <span class="switch"><input type="checkbox" id="kpiAutoSyncEnabled" checked><span class="slider round"></span></span>
+                        <span data-i18n="syncEnabledLabel">Bật tự động đồng bộ</span>
+                    </label>
+                </div>
+                <div class="checkin-setting-row">
+                    <label for="kpiSyncInterval" data-i18n="syncIntervalLabel">Chu kỳ đồng bộ:</label>
+                    <select id="kpiSyncInterval" class="snooze-select">
+                        <option value="5" data-i18n="syncEvery5">Mỗi 5 phút</option>
+                        <option value="15" selected data-i18n="syncEvery15">Mỗi 15 phút</option>
+                        <option value="30" data-i18n="syncEvery30">Mỗi 30 phút</option>
+                        <option value="60" data-i18n="syncEvery60">Mỗi 60 phút</option>
+                    </select>
+                </div>
+                <p class="sync-status" data-i18n="syncHoursHint">Auto sync chạy thứ Hai–thứ Sáu, cập nhật hoạt động hôm nay và dữ liệu mới/thay đổi bị bỏ lỡ. Re-sync cập nhật toàn bộ mục đã theo dõi.</p>
+                <div class="checkin-actions">
+                    <button id="syncNowBtn" type="button" class="btn-secondary btn-sm" data-i18n="syncNow">🔄 Re-sync toàn bộ</button>
+                    <button id="saveKpiSyncBtn" type="button" class="btn-primary btn-sm" data-i18n="saveSettingsBtn">💾 Lưu</button>
+                </div>
             </div>
 
             <div class="stats-card checkin-card">
@@ -231,21 +204,6 @@
                         <span class="checkin-label" data-i18n="checkoutLabel">Check-out</span>
                     </div>
                     <input type="time" id="checkOutTime" class="time-input" value="18:00" />
-                </div>
-
-                <div class="checkin-row">
-                    <div class="checkin-toggle-group">
-                        <label class="switch">
-                            <input type="checkbox" id="kpiReminderEnabled" checked>
-                            <span class="slider round"></span>
-                        </label>
-                        <span class="checkin-label" data-i18n="kpiReminderLabel" data-i18n-title="kpiReminderTooltip" title="Tự động quét và cảnh báo các task tạo hôm nay chưa thêm vào KPI trước giờ check-out">Nhắc KPI cuối ngày</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 4px;">
-                        <span style="font-size: 11px; color: var(--text-secondary, #666);" data-i18n="kpiReminderBefore">Trước:</span>
-                        <input type="number" id="kpiReminderMinutesBefore" class="time-input" style="width: 50px; text-align: center;" value="15" min="5" max="120" />
-                        <span style="font-size: 11px; color: var(--text-secondary, #666);" data-i18n="minutesUnit">phút</span>
-                    </div>
                 </div>
 
                 <div class="checkin-setting-row">
@@ -304,6 +262,7 @@
     </div>
 
     <script src="../utils.js"></script>
+    <script src="../sync.js"></script>
     <script src="popup.js"></script>
 </body>
 

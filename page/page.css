@@ -1835,6 +1835,15 @@ tfoot tr td {
     text-transform: uppercase;
 }
 
+.timesheet-overtime-badge {
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.15);
+    color: #b45309;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
 .timesheet-day-body {
     display: flex;
     flex-direction: column;
@@ -2209,7 +2218,8 @@ tfoot tr td {
     background: rgba(168, 85, 247, 0.1);
 }
 
-.leave-radio-label input[type="radio"] {
+.leave-radio-label input[type="radio"],
+.leave-radio-label input[type="checkbox"] {
     accent-color: #9333ea;
     width: 16px;
     height: 16px;
@@ -2295,4 +2305,10 @@ tfoot tr td {
     font-weight: 700;
     color: var(--primary);
     white-space: nowrap;
-}
+}
+.sync-status {
+    font-size: 0.8rem;
+    color: var(--text-muted, #64748b);
+    line-height: 1.5;
+    margin: 10px 0;
+}

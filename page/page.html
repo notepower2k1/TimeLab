@@ -11,6 +11,7 @@
 
     <script src="../utils.js"></script>
     <script src="../i18n.js"></script>
+    <script src="../sync.js"></script>
     <script src="exceljs.min.js"></script>
     <script src="chart.umd.min.js"></script>
     <script src="page.js" defer></script>
@@ -18,17 +19,13 @@
 
 <body>
     <div class="main-wrapper">
+        <p id="kpiSyncStatus" class="sync-status" role="status" aria-live="polite"></p>
         <header class="page-header">
             <h1 data-i18n="kpiDashboardTitle">GitLab Productivity 📊</h1>
             <div class="button-container">
                 <button id="deleteWeekBtn" class="btn-danger" data-i18n="deleteWeekBtn" data-i18n-title="deleteWeekTooltip" title="Xóa toàn bộ Task và Merge Request trong tuần đang chọn">🗑️ Xóa tuần</button>
                 <button id="deleteMonthBtn" class="btn-danger" data-i18n="deleteMonthBtn" data-i18n-title="deleteMonthTooltip" title="Xóa toàn bộ Task và Merge Request trong tháng đang chọn">🗑️ Xóa tháng</button>
-                <button id="exportWeekKpiBtn" class="btn-excel" data-i18n="exportWeekKpiBtn" data-i18n-title="exportWeekKpiTooltip" title="Xuất danh sách task và MR của tuần ra file Excel" style="display: none;">📅 Xuất KPI tuần</button>
-                <button id="exportMonthKpiBtn" class="btn-excel" data-i18n="exportMonthKpiBtn" data-i18n-title="exportMonthKpiTooltip" title="Xuất báo cáo KPI đầy đủ của tháng ra file Excel" style="display: none;">📊 Xuất KPI Tháng</button>
-                <button id="getDetailBtn" class="btn-primary" data-i18n-title="statsTooltip" title="Thống kê dữ liệu KPI">
-                    <span data-i18n="statsBtn">📊 Thống kê</span>
-                    <span id="pendingCountBadge" class="btn-badge" style="display: none;">0</span>
-                </button>
+                <button id="exportMonthKpiBtn" class="btn-excel" data-i18n="exportMonthKpiBtn" data-i18n-title="exportMonthKpiTooltip" title="Re-sync đầy đủ rồi xuất báo cáo KPI tháng ra Excel" style="display: none;">📊 Xuất KPI Tháng</button>
                 <button id="getDailyTaskBtn" class="btn-accent" data-i18n="dailyReportBtn" data-i18n-title="dailyReportTooltip" title="Sao chép báo cáo daily 3 phần">📋 Xuất Daily report</button>
             </div>
         </header>
@@ -150,7 +147,6 @@
             <main class="report-area">
                 <!-- Widget Dự Báo Điểm KPI & Sức Khỏe -->
                 <div id="kpiHealthContainer"></div>
-                <div id="spinner" class="loading-spinner" style="display: none;"></div>
                 <div id="kpiContainer"></div>
                 <!-- KPI Stat is now a separate visual piece -->
                 <div id="kpiStatsContainer"></div>
@@ -189,9 +185,9 @@
                     <div class="chart-card-header">
                         <div class="chart-card-title">
                             <span class="chart-icon">📊</span>
-                            <h4 data-i18n="chartEstSpentTitle">Ước tính vs Thực tế theo Tuần (Estimate vs Spent)</h4>
+                            <h4 data-i18n="chartEstSpentTitle">Giờ đã log theo tuần</h4>
                         </div>
-                        <span class="chart-subtitle" data-i18n="chartWeeklyEstSpentSub">So sánh tổng giờ kế hoạch và thực tế theo từng tuần</span>
+                        <span class="chart-subtitle" data-i18n="chartWeeklyEstSpentSub">Phân bổ giờ đã log theo từng tuần trong tháng đã chọn</span>
                     </div>
                     <div class="chart-wrapper">
                         <canvas id="chartWeeklyEstSpent"></canvas>
@@ -219,18 +215,6 @@
                     </div>
                     <div class="chart-wrapper">
                         <canvas id="chartTaskStatus"></canvas>
-                    </div>
-                </div>
-                <div class="chart-card">
-                    <div class="chart-card-header">
-                        <div class="chart-card-title">
-                            <span class="chart-icon">📈</span>
-                            <h4 data-i18n="chartKpiTrendTitle">Xu hướng Điểm KPI qua các Tuần</h4>
-                        </div>
-                        <span class="chart-subtitle" data-i18n="chartKpiTrendSub">Biến thiên điểm KPI trung bình tuần trong tháng</span>
-                    </div>
-                    <div class="chart-wrapper">
-                        <canvas id="chartKpiTrend"></canvas>
                     </div>
                 </div>
             </div>
@@ -289,6 +273,10 @@
                         <label for="modalLeaveReason" data-i18n="leaveReasonLabel">Lý do nghỉ (tùy chọn):</label>
                         <input type="text" id="modalLeaveReason" data-i18n-placeholder="leaveReasonPlaceholder" placeholder="VD: Nghỉ phép năm, khám bệnh, việc cá nhân, nghỉ lễ...">
                     </div>
+                    <label class="leave-radio-label" for="modalDayOvertime">
+                        <input type="checkbox" id="modalDayOvertime">
+                        <span data-i18n="dayOvertimeLabel">🌙 Có overtime</span>
+                    </label>
                     <div class="leave-actions-row">
                         <button id="saveLeaveDayBtn" class="btn-primary" type="button" data-i18n="saveLeaveBtn">💾 Lưu thiết lập ngày</button>
                     </div>
@@ -296,7 +284,7 @@
 
                 <!-- Danh sách công việc -->
                 <div class="modal-tasks-section">
-                    <h4>📋 Công việc đã ghi nhận trong ngày (<span id="modalTasksCount">0</span>):</h4>
+                    <h4><span data-i18n="recordedTasksTitle">📋 Công việc đã ghi nhận trong ngày</span> (<span id="modalTasksCount">0</span>):</h4>
                     <div id="modalTasksList" class="modal-tasks-list">
                         <!-- Task items -->
                     </div>

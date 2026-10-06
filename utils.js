@@ -18,8 +18,17 @@ async function getAccessToken() {
     });
 }
 
+async function updateTrackedItems(key, add = [], remove = []) {
+    const response = await chrome.runtime.sendMessage({ type: 'kpi:tracking', key, add, remove });
+    if (response?.error) throw new Error(response.error);
+    return response?.items || [];
+}
+
 async function removeIdFromStorage(key, id) {
     const items = await getStoredIds(key);
+    if (chrome.runtime?.sendMessage) {
+        return updateTrackedItems(key, [], items.filter(item => String(item.id) === String(id)));
+    }
     const filtered = items.filter(item => item.id !== id);
     await chrome.storage.local.set({ [key]: filtered });
 }
@@ -139,16 +148,7 @@ function parseToIsoDate(dateStr) {
         return `${y}-${m}-${d}`;
     }
 
-    // 2. Try Date.parse (handles ISO strings and US locale 'M/D/YYYY')
-    const parsed = new Date(str);
-    if (!isNaN(parsed.getTime())) {
-        const year = parsed.getFullYear();
-        const month = String(parsed.getMonth() + 1).padStart(2, '0');
-        const day = String(parsed.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    }
-
-    // 3. Fallback for DD/MM/YYYY or strings containing dates like '12:52:22 30/09/2026'
+    // 2. Parse DD/MM/YYYY before Date.parse to avoid interpreting DD/MM as MM/DD
     const dmyMatch = str.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
     if (dmyMatch) {
         const first = parseInt(dmyMatch[1], 10);
@@ -160,7 +160,25 @@ function parseToIsoDate(dateStr) {
         return `${y}-${String(second).padStart(2, '0')}-${String(first).padStart(2, '0')}`;
     }
 
+    // 3. Try Date.parse (handles ISO strings and US locale 'M/D/YYYY')
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+        const year = parsed.getFullYear();
+        const month = String(parsed.getMonth() + 1).padStart(2, '0');
+        const day = String(parsed.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
     return '';
+}
+
+function getTimelogDate(timelog) {
+    const rawDate = timelog?.spentAtRaw || timelog?.spentAt || timelog?.spent_at;
+    // GitLab timestamps are instants; date-only values are calendar dates.
+    if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(rawDate)) {
+        return parseToIsoDate(new Date(rawDate));
+    }
+    return parseToIsoDate(rawDate);
 }
 
 function getMonday(d) {
@@ -284,7 +302,7 @@ function getAvailableMonths(storedTasks = [], storedMRs = [], storedKpi = [], la
     allItems.forEach(item => {
         const addMonthIfValid = (dateStr) => {
             if (!dateStr) return;
-            const iso = parseToIsoDate(dateStr);
+            const iso = getTimelogDate({ spentAt: dateStr });
             if (iso && iso.length >= 7) {
                 const ym = iso.slice(0, 7);
                 const y = parseInt(ym.slice(0, 4));
@@ -305,7 +323,7 @@ function getAvailableMonths(storedTasks = [], storedMRs = [], storedKpi = [], la
 
         if (Array.isArray(item?.timelogs)) {
             item.timelogs.forEach(tl => {
-                addMonthIfValid(tl?.spentAt || tl?.spent_at);
+                addMonthIfValid(getTimelogDate(tl));
             });
         }
     });
@@ -372,12 +390,13 @@ function matchesFilter(itemDateStr, filterVal, selectedMonth, customStart = null
 
 function getItemOriginDate(item) {
     if (!item) return '';
-    return parseToIsoDate(item.createdAt || item.created_at || item.addedAt || item.createAt || item.startDate);
+    return getTimelogDate({ spentAt: item.createdAt || item.created_at || item.addedAt || item.createAt || item.startDate });
 }
 
 function getItemCloseDate(item) {
     if (!item) return '';
-    return parseToIsoDate(item.closedAt || item.closeDate || item.mergedAt);
+    const value = item.closedAt || item.closeDate || item.mergedAt;
+    return parseToIsoDate(typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) ? new Date(value) : value);
 }
 
 function isItemActiveInWeek(item, startIso, endIso) {
@@ -386,7 +405,7 @@ function isItemActiveInWeek(item, startIso, endIso) {
     // 1. Timelogs in week: if item.timelogs has any timelog with spentAt in [startIso, endIso]
     if (Array.isArray(item.timelogs) && item.timelogs.length > 0) {
         const hasTimelogInWeek = item.timelogs.some(tl => {
-            const spentIso = parseToIsoDate(tl?.spentAt || tl?.spent_at);
+            const spentIso = getTimelogDate(tl);
             return spentIso && spentIso >= startIso && spentIso <= endIso;
         });
         if (hasTimelogInWeek) return true;
@@ -462,7 +481,7 @@ function isItemActiveInFilter(item, filterVal, selectedMonth, customStart = null
         // Has timelogs in month
         if (Array.isArray(item.timelogs) && item.timelogs.length > 0) {
             const hasTimelogInMonth = item.timelogs.some(tl => {
-                const iso = parseToIsoDate(tl?.spentAt || tl?.spent_at);
+                const iso = getTimelogDate(tl);
                 return iso && iso.startsWith(selectedMonth);
             });
             if (hasTimelogInMonth) return true;
@@ -482,7 +501,7 @@ function isItemActiveInFilter(item, filterVal, selectedMonth, customStart = null
         // Has timelog on target day
         if (Array.isArray(item.timelogs) && item.timelogs.length > 0) {
             const hasTimelogOnDay = item.timelogs.some(tl => {
-                const iso = parseToIsoDate(tl?.spentAt || tl?.spent_at);
+                const iso = getTimelogDate(tl);
                 return iso === targetDay;
             });
             if (hasTimelogOnDay) return true;
@@ -509,7 +528,7 @@ function isItemActiveInFilter(item, filterVal, selectedMonth, customStart = null
 function isItemLate(item, refDate = new Date()) {
     if (!item || typeof item !== 'object') return false;
 
-    const closeIso = parseToIsoDate(item.closedAt || item.closeDate || item.mergedAt);
+    const closeIso = getItemCloseDate(item);
     const dueIso = parseToIsoDate(item.dueDate);
 
     const isClosed = (item.state && ['closed', 'merged'].includes(String(item.state).toLowerCase())) || !!closeIso;
@@ -701,7 +720,75 @@ function calculateKpiScore(stats) {
     };
 }
 
-function calculateStats(data, customFilterVal = null, customMonth = null) {
+function getPeriodDateRange(filterVal = 'all', selectedMonth = '', customStart = '', customEnd = '', refDate = new Date()) {
+    if (filterVal === 'current_week') {
+        const { start, end } = getCurrentWeekRange(refDate);
+        return { start, end };
+    }
+    if (filterVal.startsWith('week:')) {
+        const [, start, end] = filterVal.split(':');
+        return { start, end };
+    }
+    if (filterVal.startsWith('day:')) {
+        const day = filterVal.slice(4);
+        return { start: day, end: day };
+    }
+    if (filterVal === 'all_month' || filterVal.startsWith('month:')) {
+        const month = filterVal.startsWith('month:') ? filterVal.slice(6) : selectedMonth;
+        if (!month) return { start: '', end: '' };
+        const [year, monthNum] = month.split('-').map(Number);
+        return { start: `${month}-01`, end: `${month}-${new Date(year, monthNum, 0).getDate()}` };
+    }
+    if (filterVal === 'custom_range') return { start: customStart || '', end: customEnd || '' };
+    return { start: '', end: '' };
+}
+
+function getItemSpentInRange(item, start = '', end = '') {
+    if (!item) return 0;
+    const rawSpent = item.lifetimeSpent ?? item.spent ?? item.spentTime ?? item.totalSpentTime ?? item.spentHour;
+    const totalSpent = parseFloat(rawSpent) || 0;
+    if (!start && !end && rawSpent !== undefined) return totalSpent;
+    const inRange = date => date && (!start || date >= start) && (!end || date <= end);
+    if (Array.isArray(item.timelogs) && item.timelogs.length > 0) {
+        return item.timelogs.reduce((hours, log) => {
+            if ((start || end) && !inRange(getTimelogDate(log))) return hours;
+            return hours + (log.timeSpentHours !== undefined
+                ? (parseFloat(log.timeSpentHours) || 0)
+                : (parseFloat(log.timeSpent) || 0) / 3600);
+        }, 0);
+    }
+    // Legacy data has no dated logs: assign its hours once, on its stored date.
+    const date = getTimelogDate({ spentAt: item.dateIso || item.addedAt || item.createAt || item.spentAt || item.createdAt });
+    return inRange(date) ? totalSpent : 0;
+}
+
+function isItemClosed(item) {
+    if (!item) return false;
+    const state = String(item.state || '').toLowerCase();
+    if (state) return state === 'closed' || state === 'merged';
+    return item.isOpen !== true && !!getItemCloseDate(item);
+}
+
+function getItemEstimateVariance(item) {
+    const estimate = parseFloat(item?.estimate) || 0;
+    if (!isItemClosed(item) || estimate <= 0) return null;
+    return Number((getItemSpentInRange(item) - estimate).toFixed(2));
+}
+
+function getMonthlyWorkingHours(month, leaveDays = {}) {
+    const [year, monthNum] = month.split('-').map(Number);
+    let hours = 0;
+    for (let day = 1; day <= new Date(year, monthNum, 0).getDate(); day++) {
+        const weekday = new Date(year, monthNum - 1, day).getDay();
+        if (weekday === 0 || weekday === 6) continue;
+        const leave = leaveDays[`${month}-${String(day).padStart(2, '0')}`];
+        const value = typeof leave === 'number' ? leave : (leave?.value ?? (leave?.type === 'half' ? 0.5 : leave?.type === 'full' ? 1 : 0));
+        hours += Math.max(0, 8 - value * 8);
+    }
+    return hours;
+}
+
+function calculateStats(data, customFilterVal = null, customMonth = null, customStart = null, customEnd = null, refDate = new Date(), leaveDaysMap = {}) {
     const totalItems = (data && data.length) ? data.length : 0;
     const workItems = Array.isArray(data) ? data.filter(it => !it.isMR) : [];
     const totalTask = workItems.length;
@@ -719,13 +806,14 @@ function calculateStats(data, customFilterVal = null, customMonth = null) {
     let dailySpentTime = 0;
 
     const effectiveFilter = customFilterVal || 'all';
+    const { start, end } = getPeriodDateRange(effectiveFilter, customMonth, customStart, customEnd, refDate);
     const compareDateStr = (effectiveFilter && effectiveFilter.startsWith('day:'))
         ? effectiveFilter.replace('day:', '')
-        : (typeof parseToIsoDate === 'function' ? parseToIsoDate(new Date()) : new Date().toISOString().slice(0, 10));
+        : parseToIsoDate(refDate);
 
     if (Array.isArray(data)) {
         data.forEach(item => {
-            const spent = typeof item.spent === 'number' ? item.spent : (parseFloat(item.spent) || 0);
+            const spent = getItemSpentInRange(item, start, end);
             const est = typeof item.estimate === 'number' ? item.estimate : (parseFloat(item.estimate) || 0);
 
             if (!item.isMR) {
@@ -737,14 +825,11 @@ function calculateStats(data, customFilterVal = null, customMonth = null) {
                 if (!item.dueDate) totalTaskNoDueDate += 1;
                 if (est === 0) totalTaskNoEstimate += 1;
                 if (spent === 0) totalTaskNoSpent += 1;
-                if (item.progress === 'Đúng hạn') totalTaskInTime += 1;
+                if (!isItemLate(item, refDate)) totalTaskInTime += 1;
                 if (item.reopenTotal > 0) reopenCount += 1;
             }
 
-            const createdAt = parseToIsoDate(item.addedAt || item.createAt);
-            if (createdAt === compareDateStr) {
-                dailySpentTime += spent;
-            }
+            dailySpentTime += getItemSpentInRange(item, compareDateStr, compareDateStr);
 
             totalEstimate += est;
             totalSpent += spent;
@@ -768,12 +853,12 @@ function calculateStats(data, customFilterVal = null, customMonth = null) {
     const reopenRate = calcRate(reopenCount, totalTask);
     const unplannedTaskRate = calcRate(totalUnplannedTask, totalTask);
 
-    // Giờ làm việc tiêu chuẩn công ty: 192h cho cả tháng, 48h cho 1 tuần
-    const isMonthReport = (customMonth || effectiveFilter === 'all_month' || (effectiveFilter && effectiveFilter.startsWith('month:')));
-    const workingHours = isMonthReport ? 192 : 48;
+    // Monthly target follows the weekday calendar and recorded leave.
+    const isMonthReport = effectiveFilter === 'all_month' || effectiveFilter.startsWith('month:');
+    const reportMonth = effectiveFilter.startsWith('month:') ? effectiveFilter.slice(6) : customMonth;
+    const workingHours = isMonthReport && reportMonth ? getMonthlyWorkingHours(reportMonth, leaveDaysMap || {}) : (isMonthReport ? 192 : 48);
 
     const spentTimeVsWorkingHoursRate = calcRate(totalSpent, workingHours);
-    const spentTimeVsEstimateRate = calcRate(totalSpent, totalEstimate);
     const plannedSpentTimeVsTotalSpentTimeRate = calcRate(totalSpentPlannedTask, totalSpent);
     const unplannedSpentTimeVsTotalSpentTimeRate = calcRate(totalSpentUnplannedTask, totalSpent);
 
@@ -782,7 +867,7 @@ function calculateStats(data, customFilterVal = null, customMonth = null) {
         totalTask,
         totalPlannedTask,
         totalUnplannedTask,
-        totalTimeWorkingInCompany: 48,
+        totalTimeWorkingInCompany: workingHours,
         totalEstimate: parseFloat(totalEstimate).toFixed(2),
         totalSpent: parseFloat(totalSpent).toFixed(2),
         totalSpentPlannedTask: parseFloat(totalSpentPlannedTask).toFixed(2),
@@ -825,217 +910,9 @@ function calculateStats(data, customFilterVal = null, customMonth = null) {
         reopenRate,
         unplannedTaskRate,
         spentTimeVsWorkingHoursRate,
-        spentTimeVsEstimateRate,
         plannedSpentTimeVsTotalSpentTimeRate,
         unplannedSpentTimeVsTotalSpentTimeRate
     };
-}
-
-function getTodayStartIso(now = new Date()) {
-    let d;
-    if (now instanceof Date) {
-        d = !isNaN(now.getTime()) ? now : new Date();
-    } else if (typeof now === 'number' || typeof now === 'string') {
-        const parsed = new Date(now);
-        d = !isNaN(parsed.getTime()) ? parsed : new Date();
-    } else {
-        d = new Date();
-    }
-    const midnight = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-    return midnight.toISOString();
-}
-
-function isTaskAlreadyAdded(issue, storedItems) {
-    if (!Array.isArray(storedItems) || storedItems.length === 0) return false;
-    const issueId = String(issue.id || '').trim();
-    const issueIid = String(issue.iid || issue.id || '').trim();
-    const issueHref = String(issue.web_url || issue.href || '').trim();
-    const normIssueHref = normalizeGitLabUrl(issueHref).toLowerCase();
-    const urlPattern = /^(?:https?:\/\/[^\/]+)?\/(.+?)\/(?:issues|work_items|merge_requests)\/(\d+)$/i;
-    const issueMatch = normIssueHref ? normIssueHref.match(urlPattern) : null;
-
-    for (const stored of storedItems) {
-        if (!stored) continue;
-        const storedId = String(stored.id || stored.workItemId || '').trim();
-        const storedIid = String(stored.iid || '').trim();
-        const storedHref = String(stored.href || stored.taskUrl || stored.web_url || '').trim();
-        const normStoredHref = normalizeGitLabUrl(storedHref).toLowerCase();
-        const storedMatch = normStoredHref ? normStoredHref.match(urlPattern) : null;
-
-        // When both have URLs, enforce cross-project URL/path isolation
-        if (normIssueHref && normStoredHref) {
-            // 1. Direct normalized URL match
-            if (normIssueHref === normStoredHref) {
-                return true;
-            }
-
-            // 2. Project path and IID match across different URL schemas (/issues/ vs /work_items/)
-            if (issueMatch && storedMatch) {
-                if (issueMatch[1] === storedMatch[1] && issueMatch[2] === storedMatch[2]) {
-                    return true;
-                }
-                // Different project URLs with both present -> do not match on IID
-                continue;
-            }
-
-            // Both have URLs but differ -> do not match
-            continue;
-        }
-
-        // When at least one URL is absent, fall back to direct ID / IID matching
-        if (storedId && (storedId === issueId || (issueIid && storedId === issueIid))) {
-            return true;
-        }
-        if (storedIid && (storedIid === issueIid || storedIid === issueId)) {
-            return true;
-        }
-
-        // Match via isSameItem helper as fallback when URL is absent
-        if (isSameItem({ id: issue.id, href: issueHref, taskUrl: issueHref }, stored)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function filterUnaddedTasks(apiIssues, storedWorkItems) {
-    if (!Array.isArray(apiIssues) || apiIssues.length === 0) return [];
-    const stored = Array.isArray(storedWorkItems) ? storedWorkItems : [];
-
-    const unadded = [];
-    for (const issue of apiIssues) {
-        if (!issue) continue;
-        if (!isTaskAlreadyAdded(issue, stored)) {
-            unadded.push({
-                id: String(issue.id),
-                iid: String(issue.iid || issue.id),
-                title: issue.title || '',
-                href: issue.web_url || issue.href || '',
-                createdAt: issue.created_at || issue.createdAt || ''
-            });
-        }
-    }
-    return unadded;
-}
-
-function evaluateKpiReminderState(now, settings = {}, state = {}) {
-    let d;
-    if (now instanceof Date) {
-        d = !isNaN(now.getTime()) ? now : new Date();
-    } else if (typeof now === 'number' || typeof now === 'string') {
-        const parsed = new Date(now);
-        d = !isNaN(parsed.getTime()) ? parsed : new Date();
-    } else {
-        d = new Date();
-    }
-
-    const todayDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-    let curState = { ...state };
-    if (curState.lastDate !== todayDateStr) {
-        curState = {
-            lastDate: todayDateStr,
-            count: 0,
-            done: false,
-            lastNotified: null
-        };
-    } else {
-        curState.count = typeof curState.count === 'number' ? curState.count : 0;
-        curState.done = !!curState.done;
-        curState.lastNotified = curState.lastNotified || null;
-    }
-
-    const enabled = (settings && typeof settings.enabled === 'boolean') ? settings.enabled : true;
-
-    // Non-workday check (Saturday = 6, Sunday = 0)
-    const day = d.getDay();
-    const isWorkday = (day >= 1 && day <= 5);
-    if (!isWorkday) {
-        return { shouldScan: false, shouldNotify: false, nextState: curState };
-    }
-
-    // Disabled or marked done for the day
-    if (!enabled || curState.done) {
-        return { shouldScan: false, shouldNotify: false, nextState: curState };
-    }
-
-    const checkOutTime = (settings && settings.checkOutTime) || '18:00';
-    const minutesBefore = (settings && typeof settings.minutesBefore === 'number') ? settings.minutesBefore : 15;
-    const parts = checkOutTime.split(':').map(Number);
-    const targetHour = isNaN(parts[0]) ? 18 : parts[0];
-    const targetMinute = isNaN(parts[1]) ? 0 : parts[1];
-    const targetTotalMins = targetHour * 60 + targetMinute - minutesBefore;
-    const currentTotalMins = d.getHours() * 60 + d.getMinutes();
-
-    // If current time < target: no scan and no notify
-    if (currentTotalMins < targetTotalMins) {
-        return { shouldScan: false, shouldNotify: false, nextState: curState };
-    }
-
-    // If current time >= target: scan is enabled to update UI/cache
-    const timeDiff = currentTotalMins - targetTotalMins;
-
-    // If already notified max times (count >= 2) or exceeded 60m window: mark done and stop scanning
-    if (curState.count >= 2 || timeDiff > 60) {
-        return {
-            shouldScan: false,
-            shouldNotify: false,
-            nextState: {
-                ...curState,
-                done: true
-            }
-        };
-    }
-
-    // Snooze cooldown when already notified at least once (default: 10 mins if omitted)
-    if (curState.count > 0 && curState.lastNotified) {
-        const snoozeMinutes = (settings && typeof settings.snoozeMinutes === 'number' && settings.snoozeMinutes > 0)
-            ? settings.snoozeMinutes
-            : 10;
-        const minsSinceLast = (d.getTime() - new Date(curState.lastNotified).getTime()) / (60 * 1000);
-        if (minsSinceLast < snoozeMinutes) {
-            // In snooze cooldown: do not scan network, do not notify
-            return { shouldScan: false, shouldNotify: false, nextState: curState };
-        }
-    }
-
-    // Trigger scan and notification (alert 1 when count=0, alert 2 when count=1 after snooze)
-    return {
-        shouldScan: true,
-        shouldNotify: true,
-        nextState: {
-            ...curState,
-            count: curState.count + 1,
-            lastNotified: d.toISOString()
-        }
-    };
-}
-
-async function fetchTodayCreatedIssues(token, baseUrl, todayStartIso, customFetch = (typeof fetch !== 'undefined' ? fetch : null)) {
-    if (!token || !baseUrl || !todayStartIso) {
-        return [];
-    }
-    const fetchFn = customFetch || (typeof fetch !== 'undefined' ? fetch : null);
-    if (typeof fetchFn !== 'function') {
-        return [];
-    }
-    const cleanBase = String(baseUrl).trim().replace(/\/+$/, '');
-    const url = `${cleanBase}/api/v4/issues?scope=created_by_me&state=opened&created_after=${encodeURIComponent(todayStartIso)}&per_page=100`;
-
-    try {
-        const response = await fetchFn(url, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        if (!response || !response.ok) {
-            return [];
-        }
-        const data = await response.json();
-        return Array.isArray(data) ? data : [];
-    } catch (err) {
-        return [];
-    }
 }
 
 function sanitizeGitlabUrl(rawUrl, defaultUrl = 'https://gitlab.com') {
@@ -1141,15 +1018,11 @@ if (typeof window !== 'undefined') {
     window.getQualityScore = getQualityScore;
     window.calculateKpiScore = calculateKpiScore;
     window.calculateStats = calculateStats;
-    window.getTodayStartIso = getTodayStartIso;
-    window.isTaskAlreadyAdded = isTaskAlreadyAdded;
-    window.filterUnaddedTasks = filterUnaddedTasks;
-    window.evaluateKpiReminderState = evaluateKpiReminderState;
-    window.fetchTodayCreatedIssues = fetchTodayCreatedIssues;
     window.sanitizeGitlabUrl = sanitizeGitlabUrl;
     window.getTokenGenerationUrl = getTokenGenerationUrl;
     window.getGitlabServerUrl = getGitlabServerUrl;
     window.isWidosoftGitlab = isWidosoftGitlab;
+    window.getTimelogDate = getTimelogDate;
     window.isItemLate = isItemLate;
     window.getItemProgressStatus = getItemProgressStatus;
 }
@@ -1161,6 +1034,7 @@ const _rootScope = typeof window !== 'undefined'
         : (typeof globalThis !== 'undefined' ? globalThis : null));
 
 if (_rootScope) {
+    _rootScope.updateTrackedItems = updateTrackedItems;
     _rootScope.getItemOriginDate = getItemOriginDate;
     _rootScope.getItemCloseDate = getItemCloseDate;
     _rootScope.getAllMonthForSelect = getAllMonthForSelect;
@@ -1172,6 +1046,13 @@ if (_rootScope) {
     _rootScope.getTokenGenerationUrl = getTokenGenerationUrl;
     _rootScope.getGitlabServerUrl = getGitlabServerUrl;
     _rootScope.isWidosoftGitlab = isWidosoftGitlab;
+    _rootScope.getTimelogDate = getTimelogDate;
+    _rootScope.getPeriodDateRange = getPeriodDateRange;
+    _rootScope.getItemSpentInRange = getItemSpentInRange;
+    _rootScope.isItemClosed = isItemClosed;
+    _rootScope.getItemEstimateVariance = getItemEstimateVariance;
+    _rootScope.calculateStatsForPeriod = calculateStats;
+    _rootScope.calculateKpiScoreForStats = calculateKpiScore;
     _rootScope.isItemLate = isItemLate;
     _rootScope.getItemProgressStatus = getItemProgressStatus;
 }
@@ -1182,6 +1063,7 @@ if (typeof module !== 'undefined' && module.exports) {
         getStoredIds,
         getAccessToken,
         removeIdFromStorage,
+        updateTrackedItems,
         getUserProfile,
         compareDate,
         formatDate,
@@ -1190,6 +1072,7 @@ if (typeof module !== 'undefined' && module.exports) {
         getCurrentWeekDates,
         cleanGroupName,
         parseToIsoDate,
+        getTimelogDate,
         getMonday,
         getCurrentWeekRange,
         getWeeksOfMonth,
@@ -1210,12 +1093,12 @@ if (typeof module !== 'undefined' && module.exports) {
         getVolumeScore,
         getQualityScore,
         calculateKpiScore,
+        getMonthlyWorkingHours,
+        getPeriodDateRange,
+        getItemSpentInRange,
+        isItemClosed,
+        getItemEstimateVariance,
         calculateStats,
-        getTodayStartIso,
-        isTaskAlreadyAdded,
-        filterUnaddedTasks,
-        evaluateKpiReminderState,
-        fetchTodayCreatedIssues,
         sanitizeGitlabUrl,
         getTokenGenerationUrl,
         getGitlabServerUrl,

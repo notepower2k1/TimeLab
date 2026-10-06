@@ -11,6 +11,18 @@ function getStatusBadgeText(status) {
     }
 }
 
+function createEstimateVarianceCell(item) {
+    const cell = document.createElement('td');
+    cell.className = item.isMR ? 'col-mr-time text-center' : 'text-center';
+    const variance = getItemEstimateVariance(item);
+    cell.textContent = variance === null ? '—' : `${variance > 0 ? '+' : ''}${variance.toFixed(2)}h`;
+    cell.title = variance === null ? _tr('tableDiffPending') : _tr('tableDiffTooltip', {
+        spent: getItemSpentInRange(item), estimate: item.estimate
+    });
+    if (variance !== null) cell.classList.add(variance > 0 ? 'text-danger' : 'text-success');
+    return cell;
+}
+
 function _tr(key, params = {}, fallback = '') {
     if (typeof t === 'function') {
         const res = t(key, params);
@@ -44,6 +56,19 @@ function _tr(key, params = {}, fallback = '') {
     return fallback || key;
 }
 
+async function getDashboardItems() {
+    if (typeof KpiSync !== 'undefined') {
+        const data = await chrome.storage.local.get(['KpiInfo', 'UserProfile', 'gitlabServerUrl', 'gitlabUrl']);
+        return KpiSync.visibleItems(data);
+    }
+    return typeof getStoredIds === 'function' ? (await getStoredIds('KpiInfo') || []) : [];
+}
+
+async function getDashboardTrackedItems(key) {
+    const data = await chrome.storage.local.get([key, 'UserProfile', 'gitlabServerUrl', 'gitlabUrl']);
+    return (data[key] || []).filter(item => KpiSync.belongsToSource(item, data));
+}
+
 if (typeof isItemLate === 'undefined' && typeof require === 'function') {
     try {
         const _utils = require('../utils.js');
@@ -70,11 +95,7 @@ function isWidosoftGitlab(url) {
 function updateExportButtonsVisibility(serverUrl) {
     if (typeof document === 'undefined') return;
     const isWido = isWidosoftGitlab(serverUrl);
-    const exportWeekBtn = document.getElementById('exportWeekKpiBtn') || document.getElementById('exportCSVBtn');
     const exportMonthBtn = document.getElementById('exportMonthKpiBtn');
-    if (exportWeekBtn) {
-        exportWeekBtn.style.display = isWido ? '' : 'none';
-    }
     if (exportMonthBtn) {
         exportMonthBtn.style.display = isWido ? '' : 'none';
     }
@@ -141,6 +162,7 @@ if (typeof document !== 'undefined') {
                     await refreshMonthlyAnalytics();
                 }
             }
+            if (areaName === 'local' && changes.KpiLeaveDays) await applyFilter();
             if (areaName === 'local' && changes.gitlabServerUrl) {
                 gitlabServerUrl = (typeof sanitizeGitlabUrl === 'function')
                     ? sanitizeGitlabUrl(changes.gitlabServerUrl.newValue)
@@ -149,7 +171,7 @@ if (typeof document !== 'undefined') {
             }
         });
     }
-    const today = new Date();
+    let today = new Date();
 
     const toIsoDate = dateStr => {
         if (!dateStr) return '';
@@ -163,6 +185,7 @@ if (typeof document !== 'undefined') {
 
     let allTaskInfo = [];
     let allDailyTaskInfo = [];
+    let monthLeaveDays = {};
 
     let allMergeRequestInfo = [];
 
@@ -234,9 +257,10 @@ if (typeof document !== 'undefined') {
     }
 
     async function populateMonthOptions() {
+        today = new Date();
         const storedTasksForMonths = await getStoredIds(WORK_ITEM_KEY);
         const storedMRsForMonths = await getStoredIds(MERGE_ITEM_KEY);
-        const storedKpiForMonths = await getStoredIds('KpiInfo');
+        const storedKpiForMonths = await getDashboardItems();
 
         const activeLang = (typeof getLanguage === 'function') ? getLanguage() : 'vi';
         const availableMonths = getAvailableMonths(storedTasksForMonths, storedMRsForMonths, storedKpiForMonths, activeLang);
@@ -332,8 +356,6 @@ if (typeof document !== 'undefined') {
         // Default or restore
         if (previousVal && Array.from(timeFilterSelect.options).some(o => o.value === previousVal)) {
             timeFilterSelect.value = previousVal;
-        } else if (isCurrentMonth) {
-            timeFilterSelect.value = 'current_week';
         } else {
             timeFilterSelect.value = 'all_month';
         }
@@ -418,11 +440,7 @@ if (typeof document !== 'undefined') {
     }
 
     function isItemOpen(item) {
-        if (!item) return false;
-        if (item.isMR) {
-            return !item.closeDate || (item.state && String(item.state).toLowerCase() === 'opened');
-        }
-        return !item.closeDate || (item.state && String(item.state).toLowerCase() !== 'closed');
+        return !!item && !isItemClosed(item);
     }
 
     function getFilterLabel(key) {
@@ -497,56 +515,12 @@ if (typeof document !== 'undefined') {
     }
 
     function calculateKpiScore(stats) {
-        const _tr = (typeof t === 'function' ? t : (typeof window !== 'undefined' && typeof window.t === 'function' ? window.t : (k => k)));
-        if (!stats || !stats.totalTask || stats.totalTask === 0) {
-            return {
-                totalScore: 0,
-                attitudeScore: 0,
-                volumeScore: 0,
-                qualityScore: 0,
-                badge: { text: _tr("kpiBadgeNoData"), class: "badge-neutral", icon: "⚪" }
-            };
-        }
-        const s15 = getAttitudeScore(parseFloat(stats.noEstimateRate || 0));
-        const s20 = getAttitudeScore(parseFloat(stats.noStartDateRate || 0));
-        const s25 = getAttitudeScore(parseFloat(stats.noDueDateRate || 0));
-        const s30 = getAttitudeScore(parseFloat(stats.noSpentRate || 0));
-        const s35 = getVolumeScore(parseFloat(stats.spentTimeVsWorkingHoursRate || 0));
-        const s40 = getQualityScore(parseFloat(stats.lateRate || 0));
-        const s45 = getQualityScore(parseFloat(stats.reopenRate || 0));
-
-        const attitudeScore = (s15 * 0.25 + s20 * 0.25 + s25 * 0.25 + s30 * 0.25);
-        const volumeScore = s35;
-        const qualityScore = (s40 + s45) / 2;
-
-        const total = (
-            s15 * 0.25 +
-            s20 * 0.25 +
-            s25 * 0.25 +
-            s30 * 0.25 +
-            s35 * 3 +
-            s40 * 3 +
-            s45 * 3
-        ) / 10;
-
-        const totalScore = parseFloat(total.toFixed(2));
-
-        let badge = { text: _tr("kpiBadgeAttention"), class: "badge-danger", icon: "⚠️" };
-        if (totalScore >= 4.5) {
-            badge = { text: _tr("kpiBadgeExcellent"), class: "badge-success", icon: "🌟" };
-        } else if (totalScore >= 3.8) {
-            badge = { text: _tr("kpiBadgeGood"), class: "badge-info", icon: "🟢" };
-        } else if (totalScore >= 3.0) {
-            badge = { text: _tr("kpiBadgeFair"), class: "badge-warning", icon: "🟡" };
-        }
-
-        return {
-            totalScore,
-            attitudeScore: parseFloat(attitudeScore.toFixed(2)),
-            volumeScore: parseFloat(volumeScore.toFixed(2)),
-            qualityScore: parseFloat(qualityScore.toFixed(2)),
-            badge
-        };
+        const result = calculateKpiScoreForStats(stats);
+        const key = !stats?.totalTask ? 'kpiBadgeNoData'
+            : result.totalScore >= 4.5 ? 'kpiBadgeExcellent'
+            : result.totalScore >= 3.8 ? 'kpiBadgeGood'
+            : result.totalScore >= 3 ? 'kpiBadgeFair' : 'kpiBadgeAttention';
+        return { ...result, badge: { ...result.badge, text: _tr(key, {}, result.badge.text) } };
     }
 
     function renderKpiHealthCard(periodStats, periodLabel, baseItemsCount) {
@@ -560,7 +534,7 @@ if (typeof document !== 'undefined') {
 
         const scoreInfo = calculateKpiScore(periodStats);
         const spentVal = parseFloat(periodStats.totalSpent) || 0;
-        const targetHours = periodStats.workingHours || 48;
+        const targetHours = periodStats.workingHours ?? 0;
         const spentPercent = targetHours > 0 ? (spentVal / targetHours) * 100 : 0;
 
         let hoursBarClass = 'bar-red';
@@ -731,41 +705,11 @@ if (typeof document !== 'undefined') {
     }
 
     async function applyFilter() {
-        const oldKpiInfo = await getStoredIds('KpiInfo');
-        const healthContainer = document.getElementById('kpiHealthContainer');
-        if (oldKpiInfo && oldKpiInfo.length > 0) {
-            const oldKpiStats = await getStoredIds('KpiStats');
-            const lastUpdatedTime = oldKpiStats?.lastUpdated ? new Date(oldKpiStats.lastUpdated) : null;
-
-            document.getElementById('kpiContainer').innerHTML = '';
-
-            if (lastUpdatedTime && !isNaN(lastUpdatedTime.getTime())) {
-                const lastUpdateTitle = document.createElement('h1');
-                const isEn = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof getLanguage === 'function' && getLanguage() === 'en');
-                const formattedDate = isEn ? lastUpdatedTime.toLocaleString('en-US') : lastUpdatedTime.toLocaleString('vi-VN');
-                lastUpdateTitle.textContent = _tr('lastStatsUpdatedPrefix', {}, 'Lần thống kê cuối: ') + formattedDate;
-
-                if (isInPreviousWeek(lastUpdatedTime)) {
-                    lastUpdateTitle.textContent += _tr('lastStatsPreviousWeekSuffix', {}, ' (Tuần trước)');
-                    lastUpdateTitle.style.color = 'red';
-                }
-
-                document.getElementById('kpiContainer').appendChild(lastUpdateTitle);
-
-                const divider = document.createElement('div');
-                divider.style.height = '1px';
-                divider.style.width = '100%';
-                divider.style.backgroundColor = 'gray';
-                divider.style.margin = '10px 0';
-                document.getElementById('kpiContainer').appendChild(divider);
-            }
-
-            await renderKpi(oldKpiInfo);
-            return true;
-        } else {
-            if (healthContainer) healthContainer.innerHTML = '';
-            return false;
-        }
+        today = new Date();
+        const items = await getDashboardItems();
+        document.getElementById('kpiContainer').innerHTML = '';
+        await renderKpi(items || []);
+        return items.length > 0;
     }
 
     monthSelect.addEventListener('change', async () => {
@@ -808,20 +752,22 @@ if (typeof document !== 'undefined') {
     }
 
     // Khởi tạo trang: kiểm tra dữ liệu và render KPI nếu đã có
-    await checkAndDisableGetDetailBtn();
 
-    const initialKpiInfo = await getStoredIds('KpiInfo');
-    if (initialKpiInfo && initialKpiInfo.length > 0) {
-        await renderOldKpi();
-    } else {
-        const storedTasks = await getStoredIds(WORK_ITEM_KEY);
-        const storedMRs = await getStoredIds(MERGE_ITEM_KEY);
-        if ((storedTasks && storedTasks.length > 0) || (storedMRs && storedMRs.length > 0)) {
-            document.getElementById('kpiContainer').innerHTML = '<div class="report-section" style="text-align: center; color: var(--text-muted); padding: 40px;">' + _tr('pressStatsToCalculateKpi', {}, 'Bấm nút "📊 Thống kê" ở góc trên để bắt đầu tính toán KPI.') + '</div>';
-        } else {
-            document.getElementById('kpiContainer').innerHTML = '<div class="report-section" style="text-align: center; color: var(--text-muted); padding: 40px;">' + _tr('noStoredTasksOrMrs', {}, 'Chưa có task hoặc Merge Request nào được lưu trữ.') + '</div>';
-        }
-        await refreshMonthlyAnalytics(monthSelect ? monthSelect.value : currentMonthIso, []);
+    await applyFilter();
+
+    if (typeof KpiSync !== 'undefined') {
+        let refreshTimer;
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area !== 'local' || !['KpiInfo', 'UserProfile', 'gitlabServerUrl'].some(key => changes[key])) return;
+            clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(async () => {
+                await populateMonthOptions();
+                updateTimeFilterOptions();
+                await applyFilter();
+                updateAnalyticsMonthBadge(monthSelect.value);
+            }, 50);
+        });
+        await KpiSync.mountUI();
     }
 
     async function deleteKpiItems(itemsToDelete, confirmMsg = null) {
@@ -835,25 +781,14 @@ if (typeof document !== 'undefined') {
             if (!confirmed) return;
         }
 
-        const storedTasks = await getStoredIds(WORK_ITEM_KEY);
-        const storedMRs = await getStoredIds(MERGE_ITEM_KEY);
-        const storedKpi = await getStoredIds('KpiInfo');
-
-        const shouldDelete = (raw) => itemsToDelete.some(target => isSameItem(raw, target));
-
-        const newTasks = (storedTasks || []).filter(raw => !shouldDelete(raw));
-        const newMRs = (storedMRs || []).filter(raw => !shouldDelete(raw));
-        const newKpi = (storedKpi || []).filter(k => !shouldDelete(k));
-
-        await chrome.storage.local.set({
-            [WORK_ITEM_KEY]: newTasks,
-            [MERGE_ITEM_KEY]: newMRs,
-            ['KpiInfo']: newKpi
-        });
+        const isMr = item => item.isMR || /merge_requests\//.test(item.href || item.taskUrl || '');
+        const tasks = itemsToDelete.filter(item => !isMr(item));
+        const mrs = itemsToDelete.filter(isMr);
+        if (tasks.length) await KpiSync.updateTrackedItems(WORK_ITEM_KEY, [], tasks);
+        if (mrs.length) await KpiSync.updateTrackedItems(MERGE_ITEM_KEY, [], mrs);
 
         currentPage = 1;
         await applyFilter();
-        await checkAndDisableGetDetailBtn();
     }
 
     async function deleteKpiItem(itemToDelete) {
@@ -875,9 +810,9 @@ if (typeof document !== 'undefined') {
     }
 
     async function deleteByDateRange(startIso, endIso, confirmMsg = null) {
-        const storedTasks = await getStoredIds(WORK_ITEM_KEY);
-        const storedMRs = await getStoredIds(MERGE_ITEM_KEY);
-        const storedKpi = await getStoredIds('KpiInfo');
+        const storedTasks = await getDashboardTrackedItems(WORK_ITEM_KEY);
+        const storedMRs = await getDashboardTrackedItems(MERGE_ITEM_KEY);
+        const storedKpi = await getDashboardItems();
 
         const inRange = (dStr) => isDateInWeek(dStr, startIso, endIso);
 
@@ -897,30 +832,13 @@ if (typeof document !== 'undefined') {
         }
 
         const itemsToDeleteList = [...tasksToDelete, ...mrsToDelete, ...kpiToDelete];
-        const isTarget = (raw) => {
-            if (inRange(raw.createAt || raw.addedAt)) return true;
-            return itemsToDeleteList.some(target => isSameItem(raw, target));
-        };
-
-        const newTasks = (storedTasks || []).filter(raw => !isTarget(raw));
-        const newMRs = (storedMRs || []).filter(raw => !isTarget(raw));
-        const newKpi = (storedKpi || []).filter(k => !isTarget(k));
-
-        await chrome.storage.local.set({
-            [WORK_ITEM_KEY]: newTasks,
-            [MERGE_ITEM_KEY]: newMRs,
-            ['KpiInfo']: newKpi
-        });
-
-        currentPage = 1;
-        await applyFilter();
-        await checkAndDisableGetDetailBtn();
+        await deleteKpiItems(itemsToDeleteList);
     }
 
     async function deleteByMonth(monthIso, confirmMsg = null) {
-        const storedTasks = await getStoredIds(WORK_ITEM_KEY);
-        const storedMRs = await getStoredIds(MERGE_ITEM_KEY);
-        const storedKpi = await getStoredIds('KpiInfo');
+        const storedTasks = await getDashboardTrackedItems(WORK_ITEM_KEY);
+        const storedMRs = await getDashboardTrackedItems(MERGE_ITEM_KEY);
+        const storedKpi = await getDashboardItems();
 
         const inMonth = (dStr) => {
             const iso = parseToIsoDate(dStr);
@@ -943,119 +861,8 @@ if (typeof document !== 'undefined') {
         }
 
         const itemsToDeleteList = [...tasksToDelete, ...mrsToDelete, ...kpiToDelete];
-        const isTarget = (raw) => {
-            if (inMonth(raw.createAt || raw.addedAt)) return true;
-            return itemsToDeleteList.some(target => isSameItem(raw, target));
-        };
-
-        const newTasks = (storedTasks || []).filter(raw => !isTarget(raw));
-        const newMRs = (storedMRs || []).filter(raw => !isTarget(raw));
-        const newKpi = (storedKpi || []).filter(k => !isTarget(k));
-
-        await chrome.storage.local.set({
-            [WORK_ITEM_KEY]: newTasks,
-            [MERGE_ITEM_KEY]: newMRs,
-            ['KpiInfo']: newKpi
-        });
-
-        currentPage = 1;
-        await applyFilter();
-        await checkAndDisableGetDetailBtn();
+        await deleteKpiItems(itemsToDeleteList);
     }
-
-
-    document.getElementById('getDetailBtn').addEventListener('click', async () => {
-        const accessToken = await getAccessToken();
-
-        if (!accessToken) {
-            alert('Chưa set access token');
-            return;
-        }
-
-        currentPage = 1;
-        document.getElementById('kpiContainer').innerHTML = '';
-        document.getElementById('kpiStatsContainer').innerHTML = '';
-
-        // Show loading spinner
-        document.getElementById('spinner').style.display = 'block'; // Hiện loading
-
-        console.log('Loading new data');
-
-        const storedTasks = await getStoredIds(WORK_ITEM_KEY);
-        const storedMRs = await getStoredIds(MERGE_ITEM_KEY);
-
-        const allItems = [];
-        (storedTasks || []).forEach(task => {
-            const { id, href, createAt, parentTitle, parentUrl, parentIid, taskTitle } = task;
-            const match = href.match(/https?:\/\/[^\/]+\/[^\/]+\/([^\/]+)\//);
-            const groupName = match ? match[1] : 'Khác';
-            allItems.push({
-                id,
-                href,
-                createAt,
-                groupName,
-                isMR: false,
-                storedData: { parentTitle, parentUrl, parentIid, taskTitle }
-            });
-        });
-        (storedMRs || []).forEach(mr => {
-            const { id, href, createAt, parentTitle, parentUrl, title } = mr;
-            const match = href.match(/https?:\/\/[^\/]+\/[^\/]+\/([^\/]+)\//);
-            const groupName = match ? match[1] : 'Khác';
-            allItems.push({
-                id,
-                href,
-                createAt,
-                groupName,
-                isMR: true,
-                storedData: { parentTitle, parentUrl, taskTitle: title }
-            });
-        });
-
-        const token = await getAccessToken();
-        const BATCH_SIZE = 6;
-        const kpiInfoRaw = [];
-        for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
-            const batch = allItems.slice(i, i + BATCH_SIZE);
-            const batchResults = await Promise.all(batch.map(({ createAt, href, id, groupName, isMR, storedData }) => {
-                return getWorkItemDetailNew(createAt, href, groupName, id, isMR, storedData, token);
-            }));
-            kpiInfoRaw.push(...batchResults);
-        }
-        const kpiInfo = kpiInfoRaw.filter(item => item !== null);
-
-        if (kpiInfo.length === 0) {
-            document.getElementById('spinner').style.display = 'none'; // Ẩn loading sau khi render xong
-            document.getElementById('kpiContainer').innerHTML = `<div class="report-section" style="text-align: center; color: var(--text-muted); padding: 40px;">${_tr('noDataToStat', {}, 'Không có dữ liệu để thống kê.')}</div>`;
-            return;
-        }
-
-        const lastUpdateTitle = document.createElement('h1');
-        const isEn = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof getLanguage === 'function' && getLanguage() === 'en');
-        const formattedDate = isEn ? new Date().toLocaleString('en-US') : new Date().toLocaleString('vi-VN');
-        lastUpdateTitle.textContent = _tr('lastStatsUpdatedPrefix', {}, 'Lần thống kê cuối: ') + formattedDate;
-
-        if (isInPreviousWeek(new Date())) {
-            lastUpdateTitle.textContent += _tr('lastStatsPreviousWeekSuffix', {}, ' (Tuần trước)');
-            lastUpdateTitle.style.color = 'red';
-        }
-
-        document.getElementById('kpiContainer').appendChild(lastUpdateTitle);
-
-        // Append divider
-        const divider = document.createElement('div');
-        divider.style.height = '1px';
-        divider.style.width = '100%';
-        divider.style.backgroundColor = 'gray';
-        divider.style.margin = '10px 0';
-        document.getElementById('kpiContainer').appendChild(divider);
-
-        await saveKpiInfo(kpiInfo);
-        await renderKpi(kpiInfo, true);
-        await updatePendingStatsBadge();
-
-        document.getElementById('spinner').style.display = 'none'; // Ẩn loading sau khi render xong
-    });
 
     const deleteWeekBtn = document.getElementById('deleteWeekBtn');
     if (deleteWeekBtn) {
@@ -1096,7 +903,7 @@ if (typeof document !== 'undefined') {
                 }
                 targetLabel = `${_tr('dateRangePrefix', {}, 'Khoảng ngày')} ${formatDate(targetStart)} - ${formatDate(targetEnd)}`;
             } else if (filterVal === 'all_month') {
-                const storedKpi = await getStoredIds('KpiInfo');
+                const storedKpi = await getDashboardItems();
                 const monthItems = (storedKpi || []).filter(item => matchesFilter(item.addedAt, 'all_month', selectedMonth, '', ''));
                 const activeWeeks = monthWeeks.filter(w => monthItems.some(item => isDateInWeek(item.addedAt, w.start, w.end)));
 
@@ -1137,7 +944,7 @@ if (typeof document !== 'undefined') {
 
             const storedTasks = await getStoredIds(WORK_ITEM_KEY);
             const storedMRs = await getStoredIds(MERGE_ITEM_KEY);
-            const storedKpi = await getStoredIds('KpiInfo');
+            const storedKpi = await getDashboardItems();
 
             const inRange = (dStr) => isDateInWeek(dStr, targetStart, targetEnd);
             const taskCount = (storedTasks || []).filter(it => inRange(it.createAt || it.addedAt)).length;
@@ -1165,7 +972,7 @@ if (typeof document !== 'undefined') {
 
             const storedTasks = await getStoredIds(WORK_ITEM_KEY);
             const storedMRs = await getStoredIds(MERGE_ITEM_KEY);
-            const storedKpi = await getStoredIds('KpiInfo');
+            const storedKpi = await getDashboardItems();
 
             const inMonth = (dStr) => {
                 const iso = parseToIsoDate(dStr);
@@ -1187,17 +994,17 @@ if (typeof document !== 'undefined') {
         });
     }
 
-    const exportWeekBtn = document.getElementById('exportWeekKpiBtn') || document.getElementById('exportCSVBtn');
-    if (exportWeekBtn) {
-        exportWeekBtn.addEventListener('click', async () => {
-            await exportWeeklyKPIExcel();
-        });
-    }
-
     const exportMonthBtn = document.getElementById('exportMonthKpiBtn');
     if (exportMonthBtn) {
         exportMonthBtn.addEventListener('click', async () => {
-            await exportMonthlyKPIExcel();
+            exportMonthBtn.disabled = true;
+            exportMonthBtn.textContent = _tr('exportMonthSyncing');
+            try { await exportMonthlyKPIExcel(); }
+            catch (error) { alert(_tr('alertExportFailed', { error: error.message })); }
+            finally {
+                exportMonthBtn.disabled = false;
+                exportMonthBtn.textContent = _tr('exportMonthKpiBtn');
+            }
         });
     }
 
@@ -1250,7 +1057,7 @@ if (typeof document !== 'undefined') {
         alert('Daily task copied to clipboard');
     });
 
-    const NUMERIC_SORT_COLS = new Set(['estimate', 'spent', 'reopenTotal']);
+    const NUMERIC_SORT_COLS = new Set(['estimate', 'spent', 'lifetimeSpent', 'estimateVariance', 'reopenTotal']);
 
     function getItemSortValue(item, col) {
         if (!item) return '';
@@ -1274,6 +1081,10 @@ if (typeof document !== 'undefined') {
                 return Number(item.estimate) || 0;
             case 'spent':
                 return Number(item.spent) || 0;
+            case 'lifetimeSpent':
+                return getItemSpentInRange(item);
+            case 'estimateVariance':
+                return getItemEstimateVariance(item);
             case 'reopenTotal':
                 return Number(item.reopenTotal) || 0;
             case 'type':
@@ -1297,6 +1108,12 @@ if (typeof document !== 'undefined') {
             if (!valB) return -1;
             const res = valA.localeCompare(valB);
             return dir === 'desc' ? -res : res;
+        }
+
+        if (col === 'estimateVariance') {
+            if (valA === null && valB === null) return 0;
+            if (valA === null) return 1;
+            if (valB === null) return -1;
         }
 
         if (isNum) {
@@ -1392,133 +1209,10 @@ if (typeof document !== 'undefined') {
     }
 
     function calculateStats(data, customFilterVal = null, customMonth = null) {
-        const totalItems = (data && data.length) ? data.length : 0;
-        const workItems = Array.isArray(data) ? data.filter(it => !it.isMR) : [];
-        const totalTask = workItems.length;
-
-        let totalPlannedTask = 0;
-        let totalEstimate = 0;
-        let totalSpent = 0;
-        let totalSpentPlannedTask = 0;
-        let totalTaskNoStartDate = 0;
-        let totalTaskNoDueDate = 0;
-        let totalTaskNoEstimate = 0;
-        let totalTaskNoSpent = 0;
-        let totalTaskInTime = 0;
-        let reopenCount = 0;
-        let dailySpentTime = 0;
-
-        const effectiveFilter = customFilterVal || (typeof timeFilterSelect !== 'undefined' && timeFilterSelect ? timeFilterSelect.value : 'all');
-        const compareDateStr = (effectiveFilter && effectiveFilter.startsWith('day:'))
-            ? effectiveFilter.replace('day:', '')
-            : (typeof today !== 'undefined' ? parseToIsoDate(today) : parseToIsoDate(new Date()));
-
-        if (Array.isArray(data)) {
-            data.forEach(item => {
-                const spent = typeof item.spent === 'number' ? item.spent : (parseFloat(item.spent) || 0);
-                const est = typeof item.estimate === 'number' ? item.estimate : (parseFloat(item.estimate) || 0);
-
-                if (!item.isMR) {
-                    if (item.type === 'Kế hoạch') {
-                        totalPlannedTask += 1;
-                        totalSpentPlannedTask += spent;
-                    }
-                    if (!item.startDate) totalTaskNoStartDate += 1;
-                    if (!item.dueDate) totalTaskNoDueDate += 1;
-                    if (est === 0) totalTaskNoEstimate += 1;
-                    if (spent === 0) totalTaskNoSpent += 1;
-                    const isLate = (typeof isItemLate === 'function') ? isItemLate(item) : (item.progress === 'Trễ hạn' || item.isLate === true);
-                    if (!isLate) totalTaskInTime += 1;
-                    if (item.reopenTotal > 0) reopenCount += 1;
-                }
-
-                const createdAt = parseToIsoDate(item.addedAt || item.createAt);
-                if (createdAt === compareDateStr) {
-                    dailySpentTime += spent;
-                }
-
-                totalEstimate += est;
-                totalSpent += spent;
-            });
-        }
-
-        const totalUnplannedTask = Math.max(0, totalTask - totalPlannedTask);
-        const totalSpentUnplannedTask = Math.max(0, totalSpent - totalSpentPlannedTask);
-        const totalTaskLate = Math.max(0, totalTask - totalTaskInTime);
-        const totalTaskNotReopen = Math.max(0, totalTask - reopenCount);
-
-        const calcRate = (num, denom) => (denom > 0 ? parseFloat(((num / denom) * 100).toFixed(2)) : 0);
-
-        const noStartDateRate = calcRate(totalTaskNoStartDate, totalTask);
-        const noDueDateRate = calcRate(totalTaskNoDueDate, totalTask);
-        const noEstimateRate = calcRate(totalTaskNoEstimate, totalTask);
-        const noSpentRate = calcRate(totalTaskNoSpent, totalTask);
-        const onTimeRate = calcRate(totalTaskInTime, totalTask);
-        const lateRate = calcRate(totalTaskLate, totalTask);
-        const noReopenRate = calcRate(totalTaskNotReopen, totalTask);
-        const reopenRate = calcRate(reopenCount, totalTask);
-        const unplannedTaskRate = calcRate(totalUnplannedTask, totalTask);
-
-        // Giờ làm việc tiêu chuẩn công ty: 192h cho cả tháng, 48h cho 1 tuần
-        const isMonthReport = (customMonth || effectiveFilter === 'all_month' || (effectiveFilter && effectiveFilter.startsWith('month:')));
-        const workingHours = isMonthReport ? 192 : 48;
-
-        const spentTimeVsWorkingHoursRate = calcRate(totalSpent, workingHours);
-        const spentTimeVsEstimateRate = calcRate(totalSpent, totalEstimate);
-        const plannedSpentTimeVsTotalSpentTimeRate = calcRate(totalSpentPlannedTask, totalSpent);
-        const unplannedSpentTimeVsTotalSpentTimeRate = calcRate(totalSpentUnplannedTask, totalSpent);
-
-        return {
-            totalTask,
-            totalPlannedTask,
-            totalUnplannedTask,
-            totalTimeWorkingInCompany: 48,
-            totalEstimate: parseFloat(totalEstimate).toFixed(2),
-            totalSpent: parseFloat(totalSpent).toFixed(2),
-            totalSpentPlannedTask: parseFloat(totalSpentPlannedTask).toFixed(2),
-            totalSpentUnplannedTask: parseFloat(totalSpentUnplannedTask).toFixed(2),
-            totalTaskNoStartDate,
-            totalTaskNoDueDate,
-            totalTaskNoEstimate,
-            totalTaskNoSpent,
-            totalTaskInTime,
-            totalTaskLate,
-            totalTaskNotReopen,
-            totalTaskReopen: reopenCount,
-            dailySpentTime: parseFloat(dailySpentTime).toFixed(2),
-            lastUpdated: new Date().toLocaleString(),
-
-            totalTasks: totalTask,
-            totalPlannedTasks: totalPlannedTask,
-            totalUnplannedTasks: totalUnplannedTask,
-            workingHours,
-            totalEstimateTime: parseFloat(totalEstimate).toFixed(2),
-            totalSpentTime: parseFloat(totalSpent).toFixed(2),
-            totalPlannedSpentTime: parseFloat(totalSpentPlannedTask).toFixed(2),
-            totalUnplannedSpentTime: parseFloat(totalSpentUnplannedTask).toFixed(2),
-            tasksNoStartDate: totalTaskNoStartDate,
-            tasksNoDueDate: totalTaskNoDueDate,
-            tasksNoEstimate: totalTaskNoEstimate,
-            tasksNoSpent: totalTaskNoSpent,
-            tasksOnTime: totalTaskInTime,
-            tasksLate: totalTaskLate,
-            tasksNoReopen: totalTaskNotReopen,
-            tasksReopen: reopenCount,
-
-            noStartDateRate,
-            noDueDateRate,
-            noEstimateRate,
-            noSpentRate,
-            onTimeRate,
-            lateRate,
-            noReopenRate,
-            reopenRate,
-            unplannedTaskRate,
-            spentTimeVsWorkingHoursRate,
-            spentTimeVsEstimateRate,
-            plannedSpentTimeVsTotalSpentTimeRate,
-            unplannedSpentTimeVsTotalSpentTimeRate
-        };
+        return calculateStatsForPeriod(
+            data, customFilterVal || timeFilterSelect.value, customMonth,
+            startDateInput ? startDateInput.value : '', endDateInput ? endDateInput.value : '', today, monthLeaveDays
+        );
     }
 
     async function renderKpi(kpiData, isSaveKpiStats = false) {
@@ -1527,36 +1221,22 @@ if (typeof document !== 'undefined') {
         const filterVal = timeFilterSelect.value;
         allDailyTaskInfo = [];
 
-        // Columns display mapping
-        const columnFieldMap = {
-            "Tasks": "taskUrl",
-            "Start date": "startDate",
-            "Due date": "dueDate",
-            "Closed date": "closeDate",
-            "Estimate (h)": "estimate",
-            "Spent (h)": "spent",
-            "Số lần bị reopen": "reopenTotal",
-            "Loại task": "type",
-            "Tiến độ": "progress"
-        };
-        const taskColumns = ["Tasks", "Start date", "Due date", "Closed date", "Estimate (h)", "Spent (h)", "Số lần bị reopen", "Loại task", "Tiến độ"];
-
         const activeLang = (typeof getLanguage === 'function') ? getLanguage() : 'vi';
 
-        // 1. Calculate and Save Current Week Stats if requested (keeps popup synced with current week)
-        if (isSaveKpiStats) {
-            const cw = getCurrentWeekRange(today, activeLang);
-            const currentWeekData = kpiData.filter(item => isItemActiveInWeek(item, cw.start, cw.end));
-            const weeklyStats = calculateStats(currentWeekData.length > 0 ? currentWeekData : kpiData, filterVal);
-            await saveKpiStats(weeklyStats);
-        }
+        monthLeaveDays = await getLeaveDays();
+        const monthItems = kpiData.filter(item => isItemActiveInFilter(item, 'all_month', selectedMonth));
+        const monthlyStats = calculateStats(monthItems, 'all_month', selectedMonth);
+        if (isSaveKpiStats) await saveKpiStats({ ...monthlyStats, month: selectedMonth });
 
         // 2. Base data for current period filter (independent of search / chip filters)
         const cStart = startDateInput ? startDateInput.value : '';
         const cEnd = endDateInput ? endDateInput.value : '';
-        const baseFiltered = kpiData.filter(item => isItemActiveInFilter(item, filterVal, selectedMonth, cStart, cEnd));
+        const periodRange = getPeriodDateRange(filterVal, selectedMonth, cStart, cEnd, today);
+        const baseFiltered = kpiData
+            .filter(item => isItemActiveInFilter(item, filterVal, selectedMonth, cStart, cEnd))
+            .map(item => ({ ...item, lifetimeSpent: getItemSpentInRange(item), spent: getItemSpentInRange(item, periodRange.start, periodRange.end) }));
 
-        // Period Label for KPI Health Card
+        // Label for the selected detail period
         const [selYear, selMonth] = selectedMonth.split('-').map(Number);
         let periodLabel = _tr('monthBadgeLabel', { month: String(selMonth).padStart(2, '0'), year: selYear }, `Tháng ${String(selMonth).padStart(2, '0')}/${selYear}`);
         if (filterVal === 'current_week') {
@@ -1572,20 +1252,17 @@ if (typeof document !== 'undefined') {
             periodLabel = `${formatDate(cStart)} - ${formatDate(cEnd)}`;
         }
 
-        // Calculate Period Overall Stats (used for Health Card & Forecast)
-        const periodStats = calculateStats(baseFiltered, filterVal, selectedMonth);
-
         // Update Quick Filter Chip Badges
         updateChipCounts(baseFiltered);
 
         // Render KPI Health Card (Widget)
-        renderKpiHealthCard(periodStats, periodLabel, baseFiltered.length);
+        renderKpiHealthCard(monthlyStats, _tr('monthBadgeLabel', { month: String(selMonth).padStart(2, '0'), year: selYear }), monthItems.length);
 
         // Fill allDailyTaskInfo for the "What did I do today?" button based on selected day or today
         const compareDailyDate = (filterVal.startsWith('day:') ? filterVal.replace('day:', '') : parseToIsoDate(today));
         kpiData.forEach(item => {
-            if (parseToIsoDate(item.addedAt) === compareDailyDate) {
-                allDailyTaskInfo.push(item);
+            if (isItemActiveInFilter(item, `day:${compareDailyDate}`, selectedMonth)) {
+                allDailyTaskInfo.push({ ...item, lifetimeSpent: getItemSpentInRange(item), spent: getItemSpentInRange(item, compareDailyDate, compareDailyDate) });
             }
         });
 
@@ -1651,6 +1328,9 @@ if (typeof document !== 'undefined') {
         }
 
         const displayData = filteredData;
+
+        // Keep monthly analytics current even when the detail filters have no matches.
+        await refreshMonthlyAnalytics(selectedMonth, kpiData);
 
         // Check empty states
         if (baseFiltered.length === 0) {
@@ -1731,8 +1411,10 @@ if (typeof document !== 'undefined') {
                 { label: (typeof t === 'function' ? t('tableStartDate') : "Start date"), key: "startDate", center: true },
                 { label: (typeof t === 'function' ? t('tableDueDate') : "Due date"), key: "dueDate", center: true },
                 { label: (typeof t === 'function' ? t('tableClosedDate') : "Closed date"), key: "closeDate", center: true },
-                { label: (typeof t === 'function' ? t('tableEst') : "Estimate (h)"), key: "estimate", center: true },
-                { label: (typeof t === 'function' ? t('tableSpent') : "Spent (h)"), key: "spent", center: true },
+                { label: (typeof t === 'function' ? t('tableEst') : "Estimate toàn task (h)"), key: "estimate", center: true },
+                { label: _tr('tableSpent'), key: "spent", center: true },
+                { label: _tr('tableLifetimeSpent'), key: "lifetimeSpent", center: true },
+                { label: _tr('tableDiff'), key: "estimateVariance", center: true },
                 { label: (typeof t === 'function' ? t('tableReopen') : "Số lần bị reopen"), key: "reopenTotal", center: true },
                 { label: (typeof t === 'function' ? t('tableTaskType') : "Loại task"), key: "type", center: true },
                 { label: (typeof t === 'function' ? t('tableProgress') : "Tiến độ"), key: "progress", center: true },
@@ -1777,7 +1459,6 @@ if (typeof document !== 'undefined') {
             table.appendChild(thead);
 
             const tbody = document.createElement("tbody");
-            let groupTotalEstimate = 0;
             let groupTotalSpent = 0;
             let groupTotalReopen = 0;
 
@@ -1786,7 +1467,6 @@ if (typeof document !== 'undefined') {
                 : items;
 
             sortedItems.forEach(item => {
-                groupTotalEstimate += item.estimate || 0;
                 groupTotalSpent += item.spent || 0;
                 groupTotalReopen += item.reopenTotal || 0;
 
@@ -1794,7 +1474,7 @@ if (typeof document !== 'undefined') {
 
                 // 1. Tasks
                 const taskTd = document.createElement("td");
-                const isUnclosed = !item.closeDate || (item.state && String(item.state).toLowerCase() !== 'closed');
+                const isUnclosed = !isItemClosed(item);
                 if (isUnclosed) {
                     const redDot = document.createElement("span");
                     redDot.className = "badge-dot-red";
@@ -1811,8 +1491,8 @@ if (typeof document !== 'undefined') {
                     const originDate = (item.createdAt || item.addedAt) ? formatDate(parseToIsoDate(item.createdAt || item.addedAt)) : '';
                     const isEn = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof getLanguage === 'function' && getLanguage() === 'en');
                     carryBadge.title = isEn
-                        ? `Work item carried over from previous week${originDate ? ` (Created on ${originDate})` : ''}`
-                        : `Công việc chuyển tiếp từ tuần trước${originDate ? ` (Tạo ngày ${originDate})` : ''}`;
+                        ? `Work item carried over from the previous period${originDate ? ` (Created on ${originDate})` : ''}`
+                        : `Công việc chuyển tiếp từ kỳ trước${originDate ? ` (Tạo ngày ${originDate})` : ''}`;
                     taskTd.appendChild(carryBadge);
                 }
 
@@ -1875,8 +1555,8 @@ if (typeof document !== 'undefined') {
                 // 6. Closed date
                 const closeTd = document.createElement("td");
                 closeTd.className = "text-center";
-                if (!isUnclosed && item.closeDate) {
-                    closeTd.textContent = item.closeDate;
+                if (!isUnclosed) {
+                    closeTd.textContent = item.closeDate || formatDate(getItemCloseDate(item)) || '—';
                 } else {
                     const unclosedBadge = document.createElement("span");
                     unclosedBadge.className = "badge-unclosed";
@@ -1895,17 +1575,22 @@ if (typeof document !== 'undefined') {
                 // 8. Spent
                 const spentTd = document.createElement("td");
                 spentTd.className = "text-center";
-                spentTd.textContent = item.spent !== undefined ? item.spent : '';
+                spentTd.textContent = item.spent !== undefined ? Number(item.spent).toFixed(2) : '';
                 row.appendChild(spentTd);
+                const lifetimeSpentTd = document.createElement('td');
+                lifetimeSpentTd.className = item.isMR ? 'col-mr-time text-center' : 'text-center';
+                lifetimeSpentTd.textContent = getItemSpentInRange(item).toFixed(2);
+                row.appendChild(lifetimeSpentTd);
+                row.appendChild(createEstimateVarianceCell(item));
 
-                // 9. Reopen
+                // 11. Reopen
                 const reopenTd = document.createElement("td");
                 reopenTd.className = "text-center";
                 reopenTd.textContent = item.reopenTotal || 0;
                 if (item.reopenTotal > 0) reopenTd.classList.add('text-danger');
                 row.appendChild(reopenTd);
 
-                // 10. Loại task
+                // 12. Loại task
                 const typeTd = document.createElement("td");
                 typeTd.className = "text-center";
                 let typeDisplay = item.type || '';
@@ -1919,7 +1604,7 @@ if (typeof document !== 'undefined') {
                 typeTd.textContent = typeDisplay;
                 row.appendChild(typeTd);
 
-                // 11. Tiến độ
+                // 13. Tiến độ
                 const progTd = document.createElement("td");
                 progTd.className = "text-center";
                 const isLate = (typeof isItemLate === 'function') ? isItemLate(item) : (item.progress === 'Trễ hạn' || item.isLate === true);
@@ -1932,7 +1617,7 @@ if (typeof document !== 'undefined') {
                 progTd.textContent = progDisplay;
                 row.appendChild(progTd);
 
-                // 12. Thao tác (Xóa 🗑️)
+                // 14. Thao tác (Xóa 🗑️)
                 const actionTd = document.createElement("td");
                 actionTd.className = "col-action text-center";
                 const delBtn = document.createElement("button");
@@ -1962,7 +1647,7 @@ if (typeof document !== 'undefined') {
             totalLabel.style.paddingRight = "16px";
             totalRow.appendChild(totalLabel);
 
-            [groupTotalEstimate, groupTotalSpent, groupTotalReopen].forEach(val => {
+            ['—', groupTotalSpent, '—', '—', groupTotalReopen].forEach(val => {
                 const td = document.createElement("td");
                 td.className = "text-center";
                 td.textContent = typeof val === 'number' ? val.toFixed(2) : val;
@@ -1992,8 +1677,10 @@ if (typeof document !== 'undefined') {
             const mrColumns = [
                 { label: (typeof t === 'function' ? t('tableTasks') : "Tasks"), key: "tasks", center: false, className: "col-mr-task" },
                 { label: (typeof t === 'function' ? t('tableWorkItemName') : "Tên Merge Request"), key: "title", center: false, className: "col-mr-title" },
-                { label: (typeof t === 'function' ? t('tableEst') : "Estimate (h)"), key: "estimate", center: true, className: "col-mr-time" },
-                { label: (typeof t === 'function' ? t('tableSpent') : "Spent (h)"), key: "spent", center: true, className: "col-mr-time" },
+                { label: (typeof t === 'function' ? t('tableEst') : "Estimate toàn task (h)"), key: "estimate", center: true, className: "col-mr-time" },
+                { label: _tr('tableSpent'), key: "spent", center: true, className: "col-mr-time" },
+                { label: _tr('tableLifetimeSpent'), key: "lifetimeSpent", center: true, className: "col-mr-time" },
+                { label: _tr('tableDiff'), key: "estimateVariance", center: true, className: "col-mr-time" },
                 { label: (typeof t === 'function' ? t('tableAction') : "Thao tác"), key: null, center: true, className: "col-action" }
             ];
             const table = document.createElement("table");
@@ -2038,7 +1725,6 @@ if (typeof document !== 'undefined') {
             table.appendChild(thead);
 
             const tbody = document.createElement("tbody");
-            let mrTotalEstimate = 0;
             let mrTotalSpent = 0;
 
             const sortedMRs = (currentMRSort.column && currentMRSort.direction)
@@ -2046,14 +1732,13 @@ if (typeof document !== 'undefined') {
                 : items;
 
             sortedMRs.forEach(item => {
-                mrTotalEstimate += item.estimate || 0;
                 mrTotalSpent += item.spent || 0;
                 const row = document.createElement("tr");
 
                 // 1. Tasks
                 const taskTd = document.createElement("td");
                 taskTd.className = "col-mr-task";
-                const isMROpen = !item.closeDate || (item.state && String(item.state).toLowerCase() === 'opened');
+                const isMROpen = !isItemClosed(item);
                 if (isMROpen) {
                     const redDot = document.createElement("span");
                     redDot.className = "badge-dot-red";
@@ -2069,8 +1754,8 @@ if (typeof document !== 'undefined') {
                     carryBadge.textContent = "🔄 " + getStatusBadgeText('carryOver');
                     const originDate = (item.createdAt || item.addedAt) ? formatDate(parseToIsoDate(item.createdAt || item.addedAt)) : '';
                     carryBadge.title = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof getLanguage === 'function' && getLanguage() === 'en')
-                        ? `Merge Request carried over from previous week${originDate ? ` (Created on ${originDate})` : ''}`
-                        : `Merge Request chuyển tiếp từ tuần trước${originDate ? ` (Tạo ngày ${originDate})` : ''}`;
+                        ? `Merge Request carried over from the previous period${originDate ? ` (Created on ${originDate})` : ''}`
+                        : `Merge Request chuyển tiếp từ kỳ trước${originDate ? ` (Tạo ngày ${originDate})` : ''}`;
                     taskTd.appendChild(carryBadge);
                 }
 
@@ -2102,10 +1787,15 @@ if (typeof document !== 'undefined') {
                 // 4. Spent
                 const spentTd = document.createElement("td");
                 spentTd.className = "col-mr-time text-center";
-                spentTd.textContent = item.spent !== undefined ? item.spent : '';
+                spentTd.textContent = item.spent !== undefined ? Number(item.spent).toFixed(2) : '';
                 row.appendChild(spentTd);
+                const lifetimeSpentTd = document.createElement('td');
+                lifetimeSpentTd.className = item.isMR ? 'col-mr-time text-center' : 'text-center';
+                lifetimeSpentTd.textContent = getItemSpentInRange(item).toFixed(2);
+                row.appendChild(lifetimeSpentTd);
+                row.appendChild(createEstimateVarianceCell(item));
 
-                // 5. Thao tác
+                // 7. Thao tác
                 const actionTd = document.createElement("td");
                 actionTd.className = "col-action text-center";
                 const delBtn = document.createElement("button");
@@ -2135,7 +1825,7 @@ if (typeof document !== 'undefined') {
             totalLabel.style.paddingRight = "16px";
             totalRow.appendChild(totalLabel);
 
-            [mrTotalEstimate, mrTotalSpent].forEach(val => {
+            ['—', mrTotalSpent, '—', '—'].forEach(val => {
                 const td = document.createElement("td");
                 td.className = "text-center";
                 td.textContent = typeof val === 'number' ? val.toFixed(2) : val;
@@ -2154,32 +1844,12 @@ if (typeof document !== 'undefined') {
             parentEl.appendChild(section);
         }
 
-        // 3. Render Week Hierarchy:
+        // 3. Render one monthly list or the selected detail period:
         const monthWeeks = getWeeksOfMonth(selYear, selMonth);
 
         let weekBlocks = [];
         if (filterVal === 'all_month') {
-            monthWeeks.forEach(w => {
-                const itemsInWeek = displayData.filter(item => isItemActiveInWeek(item, w.start, w.end));
-                if (itemsInWeek.length > 0) {
-                    weekBlocks.push({
-                        title: `📦 ${w.label}`,
-                        start: w.start,
-                        end: w.end,
-                        items: itemsInWeek
-                    });
-                }
-            });
-            const matchedIds = new Set(weekBlocks.flatMap(b => b.items.map(it => it.taskUrl || it.addedAt)));
-            const remaining = displayData.filter(it => !matchedIds.has(it.taskUrl || it.addedAt));
-            if (remaining.length > 0) {
-                weekBlocks.push({
-                    title: '📦 ' + _tr('groupOther', {}, 'Khác'),
-                    start: null,
-                    end: null,
-                    items: remaining
-                });
-            }
+            weekBlocks.push({ title: `📊 ${periodLabel}`, start: periodRange.start, end: periodRange.end, items: displayData });
         } else if (filterVal === 'current_week') {
             const cw = getCurrentWeekRange(today, activeLang);
             weekBlocks.push({
@@ -2246,6 +1916,14 @@ if (typeof document !== 'undefined') {
                 });
             }
         }
+
+        weekBlocks.forEach(block => {
+            let start = block.start || periodRange.start;
+            let end = block.end || periodRange.end;
+            if (periodRange.start && (!start || start < periodRange.start)) start = periodRange.start;
+            if (periodRange.end && (!end || end > periodRange.end)) end = periodRange.end;
+            block.items = block.items.map(item => ({ ...item, lifetimeSpent: getItemSpentInRange(item), spent: getItemSpentInRange(item, start, end) }));
+        });
 
         // 4. Pagination calculation & slicing:
         const hasAnyGroupSort = Object.values(groupSortStates).some(s => s && s.column && s.direction);
@@ -2372,7 +2050,9 @@ if (typeof document !== 'undefined') {
 
             const delWeekBtn = document.createElement("button");
             delWeekBtn.className = "btn-delete-week";
-            delWeekBtn.textContent = _tr('deleteThisWeekBtn', {}, "🗑️ Xóa tuần này");
+            delWeekBtn.textContent = filterVal === 'all_month'
+                ? _tr('deleteMonthBtn', {}, "🗑️ Xóa tháng")
+                : _tr('deleteThisWeekBtn', {}, "🗑️ Xóa tuần này");
             delWeekBtn.title = _tr('deleteThisWeekTitle', { title: wb.title }, `Xóa toàn bộ Task và Merge Request trong ${wb.title}`);
             delWeekBtn.addEventListener("click", async (e) => {
                 e.stopPropagation();
@@ -2416,8 +2096,6 @@ if (typeof document !== 'undefined') {
         const dashboardStats = calculateStats(displayData, filterVal, selectedMonth);
         await renderKpiStats(dashboardStats);
 
-        // 7. Synchronize Tab 2 Monthly Analytics
-        await refreshMonthlyAnalytics(selectedMonth, kpiData);
     }
 
     function getPaginationPages(current, total) {
@@ -2571,8 +2249,7 @@ if (typeof document !== 'undefined') {
         const statsData = [
             { label: _tr('statTotalTasks', {}, "Tổng số công việc"), value: kpiStats.totalTask, icon: "📋" },
             { label: _tr('statPlannedUnplanned', {}, "Kế hoạch / Phát sinh"), value: `${kpiStats.totalPlannedTask} / ${kpiStats.totalUnplannedTask}`, icon: "⚖️" },
-            { label: `Time ${_tr('statEstimate', {}, "Estimate")}`, value: `${kpiStats.totalEstimate}h`, icon: "⏱️" },
-            { label: `Time ${_tr('statSpent', {}, "Spent")}`, value: `${kpiStats.totalSpent}h`, icon: "⌛" },
+            { label: _tr('statSpent', {}, 'Spent trong kỳ'), value: `${kpiStats.totalSpent}h`, icon: "⌛" },
             { label: _tr('statInTimeLate', {}, "Đúng hạn / Trễ hạn"), value: `${kpiStats.totalTaskInTime} / ${kpiStats.totalTaskLate}`, icon: "🎯" },
             { label: _tr('statReopen', {}, "Task Reopen"), value: kpiStats.totalTaskReopen, icon: "🔄" },
             { label: _tr('statDailySpent', {}, "Daily Spent"), value: `${kpiStats.dailySpentTime}h`, icon: "📅" }
@@ -2602,42 +2279,6 @@ if (typeof document !== 'undefined') {
         container.appendChild(section);
     }
 
-    async function renderOldKpi() {
-        const oldKpiInfo = await getStoredIds('KpiInfo');
-        const oldKpiStats = await getStoredIds('KpiStats');
-        const lastUpdatedTime = new Date(oldKpiStats.lastUpdated)
-
-        if (oldKpiInfo.length > 0) {
-            console.log('Loading old data');
-
-            if (oldKpiInfo.length === 0) {
-                return;
-            }
-
-            const lastUpdateTitle = document.createElement('h1');
-            const isEn = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof getLanguage === 'function' && getLanguage() === 'en');
-            const formattedDate = isEn ? lastUpdatedTime.toLocaleString('en-US') : lastUpdatedTime.toLocaleString('vi-VN');
-            lastUpdateTitle.textContent = _tr('lastStatsUpdatedPrefix', {}, 'Lần thống kê cuối: ') + formattedDate;
-
-            if (isInPreviousWeek(lastUpdatedTime)) {
-                lastUpdateTitle.textContent += _tr('lastStatsPreviousWeekSuffix', {}, ' (Tuần trước)');
-                lastUpdateTitle.style.color = 'red';
-            }
-
-            document.getElementById('kpiContainer').appendChild(lastUpdateTitle);
-
-            // Append divider
-            const divider = document.createElement('div');
-            divider.style.height = '1px';
-            divider.style.width = '100%';
-            divider.style.backgroundColor = 'gray';
-            divider.style.margin = '10px 0';
-            document.getElementById('kpiContainer').appendChild(divider);
-
-            await renderKpi(oldKpiInfo);
-        }
-    }
-
     function getAttitudeScore(percent) {
         if (percent >= 80) return 1;
         if (percent >= 50) return 2;
@@ -2662,35 +2303,6 @@ if (typeof document !== 'undefined') {
         return 5;
     }
 
-    const EXCEL_STYLES = {
-        BORDER_THIN: {
-            top: { style: 'thin' },
-            left: { style: 'thin' },
-            bottom: { style: 'thin' },
-            right: { style: 'thin' }
-        },
-        FILL_HEADER: {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFD9EAD3' }
-        },
-        FONT_HEADER: {
-            name: 'Times New Roman',
-            size: 12,
-            bold: true
-        },
-        FONT_DATA: {
-            name: 'Times New Roman',
-            size: 11
-        },
-        FONT_LINK: {
-            name: 'Arial',
-            size: 11,
-            color: { argb: 'FF0000FF' },
-            underline: true
-        }
-    };
-
     function triggerExcelDownload(buffer, fileName) {
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const downloadUrl = URL.createObjectURL(blob);
@@ -2699,292 +2311,6 @@ if (typeof document !== 'undefined') {
         link.download = fileName;
         link.click();
         setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
-    }
-
-    async function exportWeeklyKPIExcel() {
-        const isWido = (typeof isWidosoftGitlab === 'function')
-            ? isWidosoftGitlab(gitlabServerUrl)
-            : (gitlabServerUrl && typeof gitlabServerUrl === 'string' && gitlabServerUrl.toLowerCase().includes('gitlab.widosoft'));
-        if (!isWido) {
-            alert(_tr('alertOnlyAvailableForWidosoft', {}, 'Chức năng xuất KPI mẫu Excel chỉ áp dụng cho máy chủ gitlab.widosoft.'));
-            return;
-        }
-
-        if (typeof ExcelJS === 'undefined') {
-            alert('Thư viện ExcelJS chưa sẵn sàng. Vui lòng tải lại trang!');
-            return;
-        }
-
-        const storedKpi = await getStoredIds('KpiInfo');
-        if (!storedKpi || storedKpi.length === 0) {
-            alert('Chưa có dữ liệu thống kê KPI. Vui lòng bấm "Thống kê" trước khi xuất file!');
-            return;
-        }
-
-        const selectedMonth = monthSelect.value;
-        const filterVal = timeFilterSelect.value;
-        const [selYear, selMonth] = selectedMonth.split('-').map(Number);
-        const monthWeeks = getWeeksOfMonth(selYear, selMonth);
-
-        let targetStart = null;
-        let targetEnd = null;
-        let targetLabel = '';
-
-        const isEn = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof getLanguage === 'function' && getLanguage() === 'en');
-        const weekPrefix = isEn ? 'Week' : 'Tuần';
-        if (filterVal === 'current_week') {
-            const cw = getCurrentWeekRange(today, activeLang);
-            targetStart = cw.start;
-            targetEnd = cw.end;
-            targetLabel = cw.label;
-        } else if (filterVal.startsWith('week:')) {
-            const parts = filterVal.split(':');
-            targetStart = parts[1];
-            targetEnd = parts[2];
-            const found = monthWeeks.find(w => w.start === targetStart && w.end === targetEnd);
-            targetLabel = found ? found.label : `${weekPrefix} ${formatDate(targetStart)} - ${formatDate(targetEnd)}`;
-        } else if (filterVal.startsWith('day:')) {
-            const targetDay = filterVal.replace('day:', '');
-            const d = new Date(targetDay);
-            const mon = getMonday(d);
-            const sun = new Date(mon);
-            sun.setDate(sun.getDate() + 6);
-            targetStart = parseToIsoDate(mon);
-            targetEnd = parseToIsoDate(sun);
-            targetLabel = `${weekPrefix} (${formatDate(targetStart)} - ${formatDate(targetEnd)})`;
-        } else if (filterVal === 'custom_range') {
-            targetStart = startDateInput?.value;
-            targetEnd = endDateInput?.value;
-            if (!targetStart || !targetEnd) {
-                alert(_tr('customRangePrompt', {}, 'Vui lòng chọn khoảng ngày bắt đầu và kết thúc.'));
-                return;
-            }
-            targetLabel = `${_tr('dateRangePrefix', {}, 'Khoảng ngày')} ${formatDate(targetStart)} - ${formatDate(targetEnd)}`;
-        } else if (filterVal === 'all_month') {
-            const monthItems = storedKpi.filter(item => isItemActiveInFilter(item, 'all_month', selectedMonth, '', ''));
-            const activeWeeks = monthWeeks.filter(w => monthItems.some(item => isItemActiveInWeek(item, w.start, w.end)));
-
-            if (activeWeeks.length === 0) {
-                alert(_tr('alertNoActiveWeeksInMonth', { month: `${String(selMonth).padStart(2, '0')}/${selYear}` }, `Tháng ${String(selMonth).padStart(2, '0')}/${selYear} không có tuần nào có dữ liệu công việc.`));
-                return;
-            }
-
-            if (activeWeeks.length === 1) {
-                targetStart = activeWeeks[0].start;
-                targetEnd = activeWeeks[0].end;
-                targetLabel = activeWeeks[0].label;
-            } else {
-                let promptText = _tr('selectWeekToExportPrompt', { month: `${String(selMonth).padStart(2, '0')}/${selYear}` }, `Chọn tuần bạn muốn xuất KPI trong tháng ${String(selMonth).padStart(2, '0')}/${selYear}:\n\n`);
-                activeWeeks.forEach((w, idx) => {
-                    promptText += `${idx + 1}. ${w.label}\n`;
-                });
-                promptText += _tr('enterWeekPrompt', { total: activeWeeks.length }, `\nNhập số thứ tự tuần (1 - ${activeWeeks.length}) hoặc nhấn Hủy:`);
-                const choice = prompt(promptText);
-                if (!choice) return;
-                const chosenIdx = parseInt(choice, 10) - 1;
-                if (chosenIdx >= 0 && chosenIdx < activeWeeks.length) {
-                    targetStart = activeWeeks[chosenIdx].start;
-                    targetEnd = activeWeeks[chosenIdx].end;
-                    targetLabel = activeWeeks[chosenIdx].label;
-                } else {
-                    alert(_tr('alertInvalidSelection', {}, 'Lựa chọn không hợp lệ.'));
-                    return;
-                }
-            }
-        }
-
-        if (!targetStart || !targetEnd) {
-            alert('Không xác định được tuần cần xuất.');
-            return;
-        }
-
-        // Lấy danh sách task và MR của tuần
-        const weekTasks = storedKpi.filter(item => !item.isMR && isItemActiveInWeek(item, targetStart, targetEnd));
-        const weekMRs = storedKpi.filter(item => item.isMR && isItemActiveInWeek(item, targetStart, targetEnd));
-
-        if (weekTasks.length === 0 && weekMRs.length === 0) {
-            alert(`Không có Task hay Merge Request nào trong "${targetLabel}".`);
-            return;
-        }
-
-        // Tạo workbook mới
-        const wb = new ExcelJS.Workbook();
-        const ws = wb.addWorksheet('Báo cáo công việc');
-
-        ws.getColumn('A').width = 10;
-        ws.getColumn('B').width = 95;
-        ws.getColumn('C').width = 14;
-        ws.getColumn('D').width = 14;
-        ws.getColumn('E').width = 14;
-        ws.getColumn('F').width = 14;
-        ws.getColumn('G').width = 14;
-        ws.getColumn('H').width = 16;
-        ws.getColumn('I').width = 14;
-        ws.getColumn('J').width = 14;
-
-        let curRow = 1;
-        const b1 = ws.getCell(`B${curRow}`);
-        b1.value = `Tuần ${formatDate(targetStart)} - ${formatDate(targetEnd)}`;
-        b1.style = {
-            font: { name: 'Times New Roman', size: 12, bold: true, italic: true }
-        };
-        curRow += 3;
-
-        // Group tasks theo groupName
-        const grouped = {};
-        weekTasks.forEach(item => {
-            const gName = cleanGroupName(item.groupName || 'Khác');
-            if (!grouped[gName]) grouped[gName] = [];
-            grouped[gName].push(item);
-        });
-
-        const headers = ['Tasks', 'Start date', 'Due date', 'Closed date', 'Estimate (h)', 'Spent (h)', 'Số lần bị reopen', 'Loại task', 'Tiến độ'];
-        const cols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-
-        Object.entries(grouped).forEach(([gName, items]) => {
-            const grpCell = ws.getCell(`B${curRow}`);
-            grpCell.value = gName;
-            grpCell.style = {
-                font: { name: 'Arial', size: 11, bold: true }
-            };
-            curRow++;
-
-            headers.forEach((h, idx) => {
-                const cell = ws.getCell(`${cols[idx]}${curRow}`);
-                cell.value = h;
-                cell.style = {
-                    font: { name: 'Times New Roman', size: 12, bold: true },
-                    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EAD3' } },
-                    border: {
-                        top: { style: 'thin' },
-                        left: { style: 'thin' },
-                        bottom: { style: 'thin' },
-                        right: { style: 'thin' }
-                    },
-                    alignment: { horizontal: 'center', vertical: 'middle' }
-                };
-            });
-            curRow++;
-
-            items.forEach(it => {
-                const taskCell = ws.getCell(`B${curRow}`);
-                taskCell.value = { text: it.taskUrl, hyperlink: it.taskUrl };
-                taskCell.style = {
-                    font: { name: 'Arial', size: 11, color: { argb: 'FF0000FF' }, underline: true },
-                    border: {
-                        top: { style: 'thin' },
-                        left: { style: 'thin' },
-                        bottom: { style: 'thin' },
-                        right: { style: 'thin' }
-                    },
-                    alignment: { vertical: 'middle' }
-                };
-
-                const rowVals = [
-                    it.startDate ? formatDate(it.startDate) : '',
-                    it.dueDate ? formatDate(it.dueDate) : '',
-                    it.closeDate ? formatDate(it.closeDate) : '',
-                    typeof it.estimate === 'number' ? it.estimate : (it.estimate ? parseFloat(it.estimate) : 0),
-                    typeof it.spent === 'number' ? it.spent : (it.spent ? parseFloat(it.spent) : 0),
-                    it.reopenTotal || 0,
-                    it.type || it.taskType || 'Kế hoạch',
-                    it.progress || 'Đúng hạn'
-                ];
-
-                rowVals.forEach((val, idx) => {
-                    const cell = ws.getCell(`${cols[idx + 1]}${curRow}`);
-                    cell.value = val;
-                    cell.style = {
-                        font: { name: 'Times New Roman', size: 12 },
-                        border: {
-                            top: { style: 'thin' },
-                            left: { style: 'thin' },
-                            bottom: { style: 'thin' },
-                            right: { style: 'thin' }
-                        },
-                        alignment: { horizontal: 'center', vertical: 'middle' }
-                    };
-                });
-                curRow++;
-            });
-            curRow += 2;
-        });
-
-        // Danh sách Merge Request
-        if (weekMRs.length > 0) {
-            const mrTitleCell = ws.getCell(`B${curRow}`);
-            mrTitleCell.value = 'DANH SÁCH MERGE REQUEST';
-            mrTitleCell.style = {
-                font: { name: 'Arial', size: 11, bold: true }
-            };
-            curRow++;
-
-            const mrHeaders = ['Tasks', 'Estimate (h)', 'Spent (h)'];
-            const mrCols = ['B', 'C', 'D'];
-            mrHeaders.forEach((h, idx) => {
-                const cell = ws.getCell(`${mrCols[idx]}${curRow}`);
-                cell.value = h;
-                cell.style = {
-                    font: { name: 'Times New Roman', size: 12, bold: true },
-                    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EAD3' } },
-                    border: {
-                        top: { style: 'thin' },
-                        left: { style: 'thin' },
-                        bottom: { style: 'thin' },
-                        right: { style: 'thin' }
-                    },
-                    alignment: { horizontal: 'center', vertical: 'middle' }
-                };
-            });
-            curRow++;
-
-            weekMRs.forEach(mr => {
-                const taskCell = ws.getCell(`B${curRow}`);
-                taskCell.value = { text: mr.taskUrl, hyperlink: mr.taskUrl };
-                taskCell.style = {
-                    font: { name: 'Arial', size: 11, color: { argb: 'FF0000FF' }, underline: true },
-                    border: {
-                        top: { style: 'thin' },
-                        left: { style: 'thin' },
-                        bottom: { style: 'thin' },
-                        right: { style: 'thin' }
-                    },
-                    alignment: { vertical: 'middle' }
-                };
-
-                const estCell = ws.getCell(`C${curRow}`);
-                estCell.value = typeof mr.estimate === 'number' ? mr.estimate : (mr.estimate ? parseFloat(mr.estimate) : 0);
-                estCell.style = {
-                    font: { name: 'Times New Roman', size: 12 },
-                    border: {
-                        top: { style: 'thin' },
-                        left: { style: 'thin' },
-                        bottom: { style: 'thin' },
-                        right: { style: 'thin' }
-                    },
-                    alignment: { horizontal: 'center', vertical: 'middle' }
-                };
-
-                const spentCell = ws.getCell(`D${curRow}`);
-                spentCell.value = typeof mr.spent === 'number' ? mr.spent : (mr.spent ? parseFloat(mr.spent) : 0);
-                spentCell.style = {
-                    font: { name: 'Times New Roman', size: 12 },
-                    border: {
-                        top: { style: 'thin' },
-                        left: { style: 'thin' },
-                        bottom: { style: 'thin' },
-                        right: { style: 'thin' }
-                    },
-                    alignment: { horizontal: 'center', vertical: 'middle' }
-                };
-                curRow++;
-            });
-        }
-
-        const buffer = await wb.xlsx.writeBuffer();
-        const startStr = formatDate(targetStart).replace(/\//g, '-');
-        const endStr = formatDate(targetEnd).replace(/\//g, '-');
-        triggerExcelDownload(buffer, `KPI_Tuan_${startStr}_${endStr}.xlsx`);
     }
 
     async function exportMonthlyKPIExcel() {
@@ -3001,15 +2327,20 @@ if (typeof document !== 'undefined') {
             return;
         }
 
-        const storedKpi = await getStoredIds('KpiInfo');
-        if (!storedKpi || storedKpi.length === 0) {
-            alert(_tr('alertNoKpiDataToExport', {}, 'Chưa có dữ liệu thống kê KPI. Vui lòng bấm "Thống kê" trước khi xuất file!'));
+        const selectedMonth = monthSelect.value;
+        try { await KpiSync.syncBeforeExport(selectedMonth); }
+        catch (error) {
+            alert(_tr('alertSyncBeforeExportFailed', { error: error.message }));
             return;
         }
 
-        const selectedMonth = monthSelect.value;
+        const storedKpi = await getDashboardItems();
+        if (!storedKpi || storedKpi.length === 0) {
+            alert(_tr('alertNoKpiDataToExport', {}, 'Chưa có dữ liệu thống kê KPI. Vui lòng chờ đồng bộ hoàn tất trước khi xuất file!'));
+            return;
+        }
+
         const [selYear, selMonth] = selectedMonth.split('-').map(Number);
-        const monthWeeks = getWeeksOfMonth(selYear, selMonth);
 
         // Lọc tất cả task/MR của tháng
         const monthItems = storedKpi.filter(item => isItemActiveInFilter(item, 'all_month', selectedMonth, '', ''));
@@ -3039,10 +2370,19 @@ if (typeof document !== 'undefined') {
         const ws1 = wb.getWorksheet('Báo cáo công việc');
         const ws2 = wb.getWorksheet('Chấm điểm KPI');
 
-        // 1. Xóa toàn bộ dữ liệu và định dạng cũ ở cột B đến J trong Sheet 1 (giữ nguyên cột L và M)
+        // Make room for lifetime spent; move the template's summary one column right.
+        ws1.unMergeCells('L3:M3');
+        ws1.unMergeCells('L22:M22');
+        ws1.spliceColumns(12, 0, []);
+        ws1.mergeCells('M3:N3');
+        ws1.mergeCells('M22:N22');
+        ws1.getColumn('L').width = 15;
+
+
+        // 1. Xóa toàn bộ dữ liệu và định dạng cũ ở cột B đến L trong Sheet 1 (giữ nguyên cột M và N)
         for (let r = 1; r <= ws1.rowCount; r++) {
             const row = ws1.getRow(r);
-            for (let c = 2; c <= 10; c++) {
+            for (let c = 2; c <= 12; c++) {
                 const cell = row.getCell(c);
                 cell.value = null;
                 cell.style = {};
@@ -3059,44 +2399,85 @@ if (typeof document !== 'undefined') {
             }
         }
 
-        // 2. Điền các tuần trong tháng vào cột B đến J
+        // 2. Monthly work items: one row per task, with only this month's spent.
         let curRow = 1;
-        const headers = ['Tasks', 'Start date', 'Due date', 'Closed date', 'Estimate (h)', 'Spent (h)', 'Số lần bị reopen', 'Loại task', 'Tiến độ'];
-        const cols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+        const headers = ['Tasks', 'Start date', 'Due date', 'Closed date', _tr('tableEst'), _tr('tableSpent'), _tr('tableLifetimeSpent'), 'Số lần bị reopen', 'Loại task', 'Tiến độ', _tr('tableDiff')];
+        const cols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
-        monthWeeks.forEach(w => {
-            const weekTasks = monthItems.filter(item => !item.isMR && isItemActiveInWeek(item, w.start, w.end));
-            if (weekTasks.length === 0) return;
+        const monthRange = getPeriodDateRange('all_month', selectedMonth);
+        const monthTasks = monthItems.filter(item => !item.isMR)
+            .map(item => ({ ...item, lifetimeSpent: getItemSpentInRange(item), spent: getItemSpentInRange(item, monthRange.start, monthRange.end) }));
+        const monthTitle = ws1.getCell(`B${curRow}`);
+        monthTitle.value = _tr('monthBadgeLabel', { month: String(selMonth).padStart(2, '0'), year: selYear });
+        monthTitle.style = { font: { name: 'Times New Roman', size: 12, bold: true } };
+        curRow += 3;
 
-            const weekTitle = ws1.getCell(`B${curRow}`);
-            weekTitle.value = `Tuần ${formatDate(w.start)} - ${formatDate(w.end)}`;
-            weekTitle.style = {
-                font: { name: 'Times New Roman', size: 12, bold: true, italic: true }
+        // Group tasks theo groupName
+        const grouped = {};
+        monthTasks.forEach(it => {
+            const gName = cleanGroupName(it.groupName || 'Khác');
+            if (!grouped[gName]) grouped[gName] = [];
+            grouped[gName].push(it);
+        });
+
+        Object.entries(grouped).forEach(([gName, items]) => {
+            const grpCell = ws1.getCell(`B${curRow}`);
+            grpCell.value = gName;
+            grpCell.style = {
+                font: { name: 'Arial', size: 11, bold: true }
             };
-            curRow += 3;
+            curRow++;
 
-            // Group tasks theo groupName
-            const grouped = {};
-            weekTasks.forEach(it => {
-                const gName = cleanGroupName(it.groupName || 'Khác');
-                if (!grouped[gName]) grouped[gName] = [];
-                grouped[gName].push(it);
-            });
-
-            Object.entries(grouped).forEach(([gName, items]) => {
-                const grpCell = ws1.getCell(`B${curRow}`);
-                grpCell.value = gName;
-                grpCell.style = {
-                    font: { name: 'Arial', size: 11, bold: true }
+            headers.forEach((h, idx) => {
+                const cell = ws1.getCell(`${cols[idx]}${curRow}`);
+                cell.value = h;
+                cell.style = {
+                    font: { name: 'Times New Roman', size: 12, bold: true },
+                    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EAD3' } },
+                    border: {
+                        top: { style: 'thin' },
+                        left: { style: 'thin' },
+                        bottom: { style: 'thin' },
+                        right: { style: 'thin' }
+                    },
+                    alignment: { horizontal: 'center', vertical: 'middle', wrapText: true }
                 };
-                curRow++;
+            });
+            ws1.getRow(curRow).height = 48;
+            curRow++;
 
-                headers.forEach((h, idx) => {
-                    const cell = ws1.getCell(`${cols[idx]}${curRow}`);
-                    cell.value = h;
+            items.forEach(it => {
+                const taskCell = ws1.getCell(`B${curRow}`);
+                taskCell.value = { text: it.taskUrl, hyperlink: it.taskUrl };
+                taskCell.style = {
+                    font: { name: 'Arial', size: 11, color: { argb: 'FF0000FF' }, underline: true },
+                    border: {
+                        top: { style: 'thin' },
+                        left: { style: 'thin' },
+                        bottom: { style: 'thin' },
+                        right: { style: 'thin' }
+                    },
+                    alignment: { vertical: 'middle' }
+                };
+
+                const rowVals = [
+                    it.startDate ? formatDate(it.startDate) : '',
+                    it.dueDate ? formatDate(it.dueDate) : '',
+                    it.closeDate ? formatDate(it.closeDate) : '',
+                    typeof it.estimate === 'number' ? it.estimate : (it.estimate ? parseFloat(it.estimate) : 0),
+                    typeof it.spent === 'number' ? it.spent : (it.spent ? parseFloat(it.spent) : 0),
+                    getItemSpentInRange(it),
+                    it.reopenTotal || 0,
+                    it.type || it.taskType || 'Kế hoạch',
+                    it.progress || 'Đúng hạn',
+                    getItemEstimateVariance(it) ?? '—'
+                ];
+
+                rowVals.forEach((val, idx) => {
+                    const cell = ws1.getCell(`${cols[idx + 1]}${curRow}`);
+                    cell.value = val;
                     cell.style = {
-                        font: { name: 'Times New Roman', size: 12, bold: true },
-                        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EAD3' } },
+                        font: { name: 'Times New Roman', size: 12 },
                         border: {
                             top: { style: 'thin' },
                             left: { style: 'thin' },
@@ -3107,55 +2488,14 @@ if (typeof document !== 'undefined') {
                     };
                 });
                 curRow++;
-
-                items.forEach(it => {
-                    const taskCell = ws1.getCell(`B${curRow}`);
-                    taskCell.value = { text: it.taskUrl, hyperlink: it.taskUrl };
-                    taskCell.style = {
-                        font: { name: 'Arial', size: 11, color: { argb: 'FF0000FF' }, underline: true },
-                        border: {
-                            top: { style: 'thin' },
-                            left: { style: 'thin' },
-                            bottom: { style: 'thin' },
-                            right: { style: 'thin' }
-                        },
-                        alignment: { vertical: 'middle' }
-                    };
-
-                    const rowVals = [
-                        it.startDate ? formatDate(it.startDate) : '',
-                        it.dueDate ? formatDate(it.dueDate) : '',
-                        it.closeDate ? formatDate(it.closeDate) : '',
-                        typeof it.estimate === 'number' ? it.estimate : (it.estimate ? parseFloat(it.estimate) : 0),
-                        typeof it.spent === 'number' ? it.spent : (it.spent ? parseFloat(it.spent) : 0),
-                        it.reopenTotal || 0,
-                        it.type || it.taskType || 'Kế hoạch',
-                        it.progress || 'Đúng hạn'
-                    ];
-
-                    rowVals.forEach((val, idx) => {
-                        const cell = ws1.getCell(`${cols[idx + 1]}${curRow}`);
-                        cell.value = val;
-                        cell.style = {
-                            font: { name: 'Times New Roman', size: 12 },
-                            border: {
-                                top: { style: 'thin' },
-                                left: { style: 'thin' },
-                                bottom: { style: 'thin' },
-                                right: { style: 'thin' }
-                            },
-                            alignment: { horizontal: 'center', vertical: 'middle' }
-                        };
-                    });
-                    curRow++;
-                });
-                curRow += 2;
             });
-            curRow++;
+            curRow += 2;
         });
+        curRow++;
 
         // 3. Danh sách Merge Request của cả tháng
-        const monthMRs = monthItems.filter(item => item.isMR);
+        const monthMRs = monthItems.filter(item => item.isMR)
+            .map(item => ({ ...item, lifetimeSpent: getItemSpentInRange(item), spent: getItemSpentInRange(item, monthRange.start, monthRange.end) }));
         if (monthMRs.length > 0) {
             const mrTitleCell = ws1.getCell(`B${curRow}`);
             mrTitleCell.value = 'DANH SÁCH MERGE REQUEST';
@@ -3164,8 +2504,8 @@ if (typeof document !== 'undefined') {
             };
             curRow++;
 
-            const mrHeaders = ['Tasks', 'Estimate (h)', 'Spent (h)'];
-            const mrCols = ['B', 'C', 'D'];
+            const mrHeaders = ['Tasks', _tr('tableEst'), _tr('tableSpent'), _tr('tableLifetimeSpent'), _tr('tableDiff')];
+            const mrCols = ['B', 'C', 'D', 'E', 'F'];
             mrHeaders.forEach((h, idx) => {
                 const cell = ws1.getCell(`${mrCols[idx]}${curRow}`);
                 cell.value = h;
@@ -3178,9 +2518,10 @@ if (typeof document !== 'undefined') {
                         bottom: { style: 'thin' },
                         right: { style: 'thin' }
                     },
-                    alignment: { horizontal: 'center', vertical: 'middle' }
+                    alignment: { horizontal: 'center', vertical: 'middle', wrapText: true }
                 };
             });
+            ws1.getRow(curRow).height = 48;
             curRow++;
 
             monthMRs.forEach(mr => {
@@ -3222,41 +2563,49 @@ if (typeof document !== 'undefined') {
                     },
                     alignment: { horizontal: 'center', vertical: 'middle' }
                 };
+                const lifetimeSpentCell = ws1.getCell(`E${curRow}`);
+                lifetimeSpentCell.value = getItemSpentInRange(mr);
+                lifetimeSpentCell.style = spentCell.style;
+                const diffCell = ws1.getCell(`F${curRow}`);
+                diffCell.value = getItemEstimateVariance(mr) ?? '—';
+                diffCell.style = spentCell.style;
                 curRow++;
             });
         }
 
-        // 4. Cập nhật số liệu Thống Kê & Tỉ lệ ở Cột L & M (Sheet 1)
-        ws1.getCell('M4').value = stats.totalTasks;
-        ws1.getCell('M5').value = stats.totalPlannedTasks;
-        ws1.getCell('M6').value = stats.totalUnplannedTasks;
-        ws1.getCell('M7').value = stats.workingHours;
-        ws1.getCell('M8').value = parseFloat(stats.totalEstimateTime);
-        ws1.getCell('M9').value = parseFloat(stats.totalSpentTime);
-        ws1.getCell('M10').value = parseFloat(stats.totalPlannedSpentTime);
-        ws1.getCell('M11').value = parseFloat(stats.totalUnplannedSpentTime);
-        ws1.getCell('M12').value = stats.tasksNoStartDate;
-        ws1.getCell('M13').value = stats.tasksNoDueDate;
-        ws1.getCell('M14').value = stats.tasksNoEstimate;
-        ws1.getCell('M15').value = stats.tasksNoSpent;
-        ws1.getCell('M16').value = stats.tasksOnTime;
-        ws1.getCell('M17').value = stats.tasksLate;
-        ws1.getCell('M18').value = stats.tasksNoReopen;
-        ws1.getCell('M19').value = stats.tasksReopen;
+        // 4. Cập nhật số liệu Thống Kê & Tỉ lệ ở Cột M & N (Sheet 1)
+        ws1.getCell('N4').value = stats.totalTasks;
+        ws1.getCell('N5').value = stats.totalPlannedTasks;
+        ws1.getCell('N6').value = stats.totalUnplannedTasks;
+        ws1.getCell('N7').value = stats.workingHours;
+        ws1.getCell('M8').value = null;
+        ws1.getCell('N8').value = null;
+        ws1.getCell('N9').value = parseFloat(stats.totalSpentTime);
+        ws1.getCell('N10').value = parseFloat(stats.totalPlannedSpentTime);
+        ws1.getCell('N11').value = parseFloat(stats.totalUnplannedSpentTime);
+        ws1.getCell('N12').value = stats.tasksNoStartDate;
+        ws1.getCell('N13').value = stats.tasksNoDueDate;
+        ws1.getCell('N14').value = stats.tasksNoEstimate;
+        ws1.getCell('N15').value = stats.tasksNoSpent;
+        ws1.getCell('N16').value = stats.tasksOnTime;
+        ws1.getCell('N17').value = stats.tasksLate;
+        ws1.getCell('N18').value = stats.tasksNoReopen;
+        ws1.getCell('N19').value = stats.tasksReopen;
 
-        ws1.getCell('M23').value = { formula: 'M12/M4*100', result: parseFloat(stats.noStartDateRate) };
-        ws1.getCell('M24').value = { formula: 'M13/M4*100', result: parseFloat(stats.noDueDateRate) };
-        ws1.getCell('M25').value = { formula: 'M14/M4*100', result: parseFloat(stats.noEstimateRate) };
-        ws1.getCell('M26').value = { formula: 'M15/M4*100', result: parseFloat(stats.noSpentRate) };
-        ws1.getCell('M27').value = { formula: 'M16/M4*100', result: parseFloat(stats.onTimeRate) };
-        ws1.getCell('M28').value = { formula: 'M17/M4*100', result: parseFloat(stats.lateRate) };
-        ws1.getCell('M29').value = { formula: 'M18/M4*100', result: parseFloat(stats.noReopenRate) };
-        ws1.getCell('M30').value = { formula: 'M19/M4*100', result: parseFloat(stats.reopenRate) };
-        ws1.getCell('M31').value = { formula: 'M6/M4*100', result: parseFloat(stats.unplannedTaskRate) };
-        ws1.getCell('M32').value = { formula: 'M9/M7*100', result: parseFloat(stats.spentTimeVsWorkingHoursRate) };
-        ws1.getCell('M33').value = { formula: 'M9/M8*100', result: parseFloat(stats.spentTimeVsEstimateRate) };
-        ws1.getCell('M34').value = { formula: 'M10/M9*100', result: parseFloat(stats.plannedSpentTimeVsTotalSpentTimeRate) };
-        ws1.getCell('M35').value = { formula: 'M11/M9*100', result: parseFloat(stats.unplannedSpentTimeVsTotalSpentTimeRate) };
+        ws1.getCell('N23').value = { formula: 'N12/N4*100', result: parseFloat(stats.noStartDateRate) };
+        ws1.getCell('N24').value = { formula: 'N13/N4*100', result: parseFloat(stats.noDueDateRate) };
+        ws1.getCell('N25').value = { formula: 'N14/N4*100', result: parseFloat(stats.noEstimateRate) };
+        ws1.getCell('N26').value = { formula: 'N15/N4*100', result: parseFloat(stats.noSpentRate) };
+        ws1.getCell('N27').value = { formula: 'N16/N4*100', result: parseFloat(stats.onTimeRate) };
+        ws1.getCell('N28').value = { formula: 'N17/N4*100', result: parseFloat(stats.lateRate) };
+        ws1.getCell('N29').value = { formula: 'N18/N4*100', result: parseFloat(stats.noReopenRate) };
+        ws1.getCell('N30').value = { formula: 'N19/N4*100', result: parseFloat(stats.reopenRate) };
+        ws1.getCell('N31').value = { formula: 'N6/N4*100', result: parseFloat(stats.unplannedTaskRate) };
+        ws1.getCell('N32').value = { formula: 'N9/N7*100', result: parseFloat(stats.spentTimeVsWorkingHoursRate) };
+        ws1.getCell('M33').value = null;
+        ws1.getCell('N33').value = null;
+        ws1.getCell('N34').value = { formula: 'N10/N9*100', result: parseFloat(stats.plannedSpentTimeVsTotalSpentTimeRate) };
+        ws1.getCell('N35').value = { formula: 'N11/N9*100', result: parseFloat(stats.unplannedSpentTimeVsTotalSpentTimeRate) };
 
         // 5. Cập nhật Sheet 2 ("Chấm điểm KPI")
         if (ws2) {
@@ -3296,6 +2645,7 @@ if (typeof document !== 'undefined') {
             };
         }
 
+        ws1.pageSetup.printArea = `A1:N${Math.max(ws1.rowCount, curRow - 1)}`;
         const buffer = await wb.xlsx.writeBuffer();
         triggerExcelDownload(buffer, `KPI_Thang_${String(selMonth).padStart(2, '0')}-${selYear}.xlsx`);
     }
@@ -3313,692 +2663,6 @@ if (typeof document !== 'undefined') {
         await chrome.storage.local.set({ ['KpiStats']: params });
     }
 
-    async function getWorkItemDetailNew(createAt, projectUrl, groupName, id = null, isMergeRequest = false, storedData = {}, cachedToken = null) {
-        const parsedUrl = parseGitLabUrl(projectUrl);
-        if (!parsedUrl) return null;
-
-        const { projectPath, iid, type: itemType } = parsedUrl;
-        const token = cachedToken || await getAccessToken();
-
-        let detailData;
-        if (itemType === 'merge_request' || isMergeRequest) {
-            detailData = await getMergeRequestDetail(token, projectPath, iid);
-        } else {
-            detailData = await getTaskDetail(token, projectPath, iid);
-        }
-
-        if (detailData) {
-            const issuable = detailData.issuable || detailData.workItem;
-            if (!issuable) return null;
-
-            const closeDateFormat = (issuable.closedAt || issuable.mergedAt) ? new Date(issuable.closedAt || issuable.mergedAt).toISOString().slice(0, 10) : '';
-
-            let esimateTimeTotal = 0;
-            let spentTimeTotal = 0;
-            let startDate = '';
-            let dueDate = '';
-            let taskType = "Kế hoạch";
-            let assigneeId = null;
-            let title = issuable.title;
-            let webUrl = issuable.webUrl;
-            let parentTitle = '';
-            let parentUrl = '';
-            let widgetTimeTracking = null;
-
-            if (itemType === 'merge_request' || isMergeRequest) {
-                esimateTimeTotal = issuable.timeEstimate;
-                spentTimeTotal = issuable.totalTimeSpent;
-
-                if (issuable.labels && issuable.labels.nodes) {
-                    issuable.labels.nodes.forEach(label => {
-                        if (label.title == "UNPLANNED") {
-                            taskType = "Phát sinh";
-                        }
-                    });
-                }
-            } else {
-                const widgets = issuable.widgets;
-
-                // Start and due date
-                const widgetStartDueDate = widgets?.find(widget => widget.type === "START_AND_DUE_DATE");
-                if (widgetStartDueDate) {
-                    startDate = formatDate(widgetStartDueDate.startDate);
-                    dueDate = widgetStartDueDate.dueDate;
-                }
-
-                // Time tracking widget
-                widgetTimeTracking = widgets?.find(widget => widget.type === "TIME_TRACKING");
-                if (widgetTimeTracking) {
-                    esimateTimeTotal = widgetTimeTracking.timeEstimate;
-                    spentTimeTotal = widgetTimeTracking.totalTimeSpent;
-                }
-
-                // Label widget
-                const widgetLabel = widgets?.find(widget => widget.type === "LABELS");
-                if (widgetLabel) {
-                    const labelNodes = widgetLabel.labels?.nodes || [];
-                    labelNodes.forEach(label => {
-                        if (label.title == "UNPLANNED") {
-                            taskType = "Phát sinh";
-                        }
-                    });
-                }
-
-                // Assignee widget
-                const widgetAssinee = widgets?.find(widget => widget.type === "ASSIGNEES");
-                if (widgetAssinee && widgetAssinee.assignees?.nodes?.length > 0) {
-                    assigneeId = widgetAssinee.assignees.nodes[0].id;
-                }
-
-                // Hierarchy widget (Parent Issue)
-                const widgetHierarchy = widgets?.find(widget => 
-                    widget.parent !== undefined || 
-                    widget.__typename === "WorkItemWidgetHierarchy" || 
-                    (widget.type && String(widget.type).toUpperCase() === "HIERARCHY")
-                );
-
-                if (widgetHierarchy && widgetHierarchy.parent) {
-                    parentTitle = widgetHierarchy.parent.title || '';
-                    if (widgetHierarchy.parent.iid) {
-                        parentUrl = `${gitlabServerUrl}/${projectPath}/-/issues/${widgetHierarchy.parent.iid}`;
-                    } else if (widgetHierarchy.parent.webUrl) {
-                        parentUrl = widgetHierarchy.parent.webUrl;
-                    }
-                }
-
-                // Fallback to stored parent info if available
-                if (!parentTitle && storedData.parentTitle) {
-                    parentTitle = storedData.parentTitle;
-                }
-                if (!parentUrl && storedData.parentUrl) {
-                    parentUrl = storedData.parentUrl;
-                }
-            }
-
-            if (!title && storedData.taskTitle) {
-                title = storedData.taskTitle;
-            }
-
-            const isLate = (typeof isItemLate === 'function')
-                ? isItemLate({ state: issuable.state, closedAt: issuable.closedAt || issuable.mergedAt, closeDate: closeDateFormat, dueDate: dueDate })
-                : (closeDateFormat && dueDate ? compareDate(closeDateFormat, dueDate) < 0 : false);
-            const progressStatus = isLate ? "Trễ hạn" : "Đúng hạn";
-
-            // Activity log (mainly for reopens, which we'll skip for MRs for now as it's complex)
-            let reopenTotal = 0;
-            if (itemType !== 'merge_request' && !isMergeRequest) {
-                const taskNoteLogs = await getTaskActivityLog(token, projectPath, iid);
-                if (taskNoteLogs && taskNoteLogs.workItem) {
-                    const taskNoteLogWidget = taskNoteLogs.workItem.widgets?.find(widget => widget.type === "NOTES");
-                    if (taskNoteLogWidget) {
-                        const taskNoteLogsList = taskNoteLogWidget.discussions?.nodes || [];
-                        taskNoteLogsList.forEach(noteLog => {
-                            const noteDetails = noteLog.notes?.nodes || [];
-                            noteDetails.forEach(noteDetail => {
-                                const noteAuthor = noteDetail.author;
-                                if (noteDetail.body == 'reopened' && noteAuthor?.id != assigneeId) {
-                                    reopenTotal += 1;
-                                }
-                            });
-                        });
-                    }
-                }
-            }
-
-            const timelogNodes = widgetTimeTracking?.timelogs?.nodes || issuable.timelogs?.nodes || [];
-            const timelogs = timelogNodes.map(node => ({
-                id: node.id,
-                timeSpent: node.timeSpent || 0,
-                timeSpentHours: node.timeSpent ? parseFloat((node.timeSpent / 3600).toFixed(2)) : 0,
-                spentAt: (node.spentAt || '').slice(0, 10),
-                spentAtRaw: node.spentAt,
-                user: node.user ? { id: node.user.id, name: node.user.name, username: node.user.username } : null,
-                note: node.note?.body || ''
-            }));
-
-            const returnData = {
-                id: id,
-                taskUrl: webUrl || projectUrl,
-                startDate: startDate,
-                dueDate: formatDate(dueDate),
-                closeDate: formatDate(closeDateFormat),
-                estimate: esimateTimeTotal ? parseFloat((esimateTimeTotal / 3600).toFixed(2)) : 0,
-                spent: spentTimeTotal ? parseFloat((spentTimeTotal / 3600).toFixed(2)) : 0,
-                reopenTotal: reopenTotal,
-                type: taskType,
-                progress: progressStatus,
-                isLate: isLate,
-                groupName: groupName,
-                addedAt: createAt,
-                createdAt: issuable.createdAt || issuable.created_at || createAt,
-                closedAt: issuable.closedAt || issuable.mergedAt || (closeDateFormat ? closeDateFormat : ''),
-                timelogs: timelogs,
-                title: title || '',
-                parentTitle: parentTitle,
-                parentUrl: parentUrl,
-                state: issuable.state || (closeDateFormat ? 'closed' : 'opened'),
-                isMR: itemType === 'merge_request' || isMergeRequest
-            };
-
-            return returnData;
-        } else {
-            return null;
-        }
-
-    }
-
-    async function getTaskDetail(token, fullPath, iid) {
-        const queryData = {
-            operationName: "namespaceWorkItem",
-            variables: {
-                fullPath: `${fullPath}`, // fullPath,
-                iid: `${iid}`, // iid
-            },
-            query: `
-           query namespaceWorkItem($fullPath: ID!, $iid: String!) {
-  workspace: namespace(fullPath: $fullPath) {
-    id
-    workItem(iid: $iid) {
-      ...WorkItem
-      __typename
-    }
-    __typename
-  }
-}
-
-fragment WorkItem on WorkItem {
-  id
-  iid
-  archived
-  title
-  state
-  description
-  confidential
-  createdAt
-  closedAt
-  webUrl
-  reference(full: true)
-  createNoteEmail
-  project {
-    id
-    __typename
-  }
-  namespace {
-    id
-    fullPath
-    name
-    fullName
-    __typename
-  }
-  author {
-    ...Author
-    __typename
-  }
-  workItemType {
-    id
-    name
-    iconName
-    __typename
-  }
-  widgets {
-    ...WorkItemWidgets
-    __typename
-  }
-  __typename
-}
-
-fragment WorkItemWidgets on WorkItemWidget {
-  type
-  ... on WorkItemWidgetHierarchy {
-    parent {
-      id
-      iid
-      title
-      __typename
-    }
-    __typename
-  }
-  ... on WorkItemWidgetDescription {
-    description
-    descriptionHtml
-    lastEditedAt
-    lastEditedBy {
-      name
-      webPath
-      __typename
-    }
-    taskCompletionStatus {
-      completedCount
-      count
-      __typename
-    }
-    __typename
-  }
-  ... on WorkItemWidgetAssignees {
-    allowsMultipleAssignees
-    canInviteMembers
-    assignees {
-      nodes {
-        ...User
-        __typename
-      }
-      __typename
-    }
-    __typename
-  }
-  ... on WorkItemWidgetLabels {
-    labels {
-      nodes {
-        ...Label
-        __typename
-      }
-      __typename
-    }
-    __typename
-  }
-  ... on WorkItemWidgetStartAndDueDate {
-    dueDate
-    startDate
-    __typename
-  }
-  ... on WorkItemWidgetTimeTracking {
-    timeEstimate
-    timelogs {
-      nodes {
-        ...TimelogFragment
-        __typename
-      }
-      __typename
-    }
-    totalTimeSpent
-    __typename
-  }
-  ... on WorkItemWidgetNotes {
-    discussionLocked
-    __typename
-  }
-  __typename
-}
-
-fragment Label on Label {
-  id
-  title
-  description
-  color
-  textColor
-  __typename
-}
-
-fragment User on User {
-  id
-  avatarUrl
-  name
-  username
-  webUrl
-  webPath
-  __typename
-}
-
-fragment TimelogFragment on WorkItemTimelog {
-  __typename
-  id
-  timeSpent
-  user {
-    id
-    name
-    __typename
-  }
-  spentAt
-  note {
-    id
-    body
-    __typename
-  }
-  summary
-  userPermissions {
-    adminTimelog
-    __typename
-  }
-}
-
-fragment Author on User {
-  id
-  avatarUrl
-  name
-  username
-  webUrl
-  webPath
-  __typename
-}
-
-            `
-        };
-
-        const response = await fetch(`${gitlabServerUrl}/api/graphql`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify(queryData),
-        });
-
-        const res = await response.json();
-        if (res.errors && res.errors.length > 0) {
-            console.warn('GitLab GraphQL errors in getTaskDetail for iid ' + iid + ':', res.errors);
-        }
-        return res.data ? res.data.workspace : null;
-    }
-
-    async function getTaskActivityLog(token, fullPath, iid) {
-        const queryData = {
-            operationName: "workItemNotesByIid",
-            variables: {
-                fullPath: `${fullPath}`, // fullPath,
-                iid: `${iid}`, // iid
-                pageSize: 40
-            },
-            query: `
-            query workItemNotesByIid($fullPath: ID!, $iid: String!, $after: String, $pageSize: Int) {
-  workspace: namespace(fullPath: $fullPath) {
-    id
-    workItem(iid: $iid) {
-      id
-      iid
-      namespace {
-        id
-        __typename
-      }
-      widgets {
-        ... on WorkItemWidgetNotes {
-          type
-          discussionLocked
-          discussions(first: $pageSize, after: $after, filter: ALL_NOTES) {
-            pageInfo {
-              ...PageInfo
-              __typename
-            }
-            nodes {
-              id
-              notes {
-                nodes {
-                  ...WorkItemNote
-                  __typename
-                }
-                __typename
-              }
-              __typename
-            }
-            __typename
-          }
-          __typename
-        }
-        __typename
-      }
-      __typename
-    }
-    __typename
-  }
-}
-
-fragment PageInfo on PageInfo {
-  hasNextPage
-  hasPreviousPage
-  startCursor
-  endCursor
-  __typename
-}
-
-fragment WorkItemNote on Note {
-  id
-  body
-  bodyHtml
-  system
-  internal
-  systemNoteIconName
-  createdAt
-  lastEditedAt
-  url
-  authorIsContributor
-  maxAccessLevelOfAuthor
-  externalAuthor
-  lastEditedBy {
-    ...User
-    webPath
-    __typename
-  }
-  discussion {
-    id
-    resolved
-    resolvable
-    resolvedBy {
-      id
-      name
-      __typename
-    }
-    __typename
-  }
-  author {
-    ...User
-    __typename
-  }
-  systemNoteMetadata {
-    id
-    __typename
-  }
-  __typename
-}
-
-fragment User on User {
-  id
-  avatarUrl
-  name
-  username
-  webUrl
-  webPath
-  __typename
-}
-            `
-        };
-        const response = await fetch(`${gitlabServerUrl}/api/graphql`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify(queryData),
-        });
-
-        const res = await response.json();
-        return res.data.workspace;
-    }
-
-
-    async function getMergeRequestDetail(token, fullPath, iid) {
-        const queryData = {
-            operationName: "mergeRequestTimeTracking",
-            variables: {
-                fullPath: `${fullPath}`,
-                iid: `${iid}`,
-            },
-            query: `
-query mergeRequestTimeTracking($fullPath: ID!, $iid: String!) {
-  workspace: project(fullPath: $fullPath) {
-    id
-    issuable: mergeRequest(iid: $iid) {
-      ...MergeRequestTimeTrackingFragment
-      title
-      description
-      state
-      createdAt
-      mergedAt
-      closedAt
-      webUrl
-      humanTimeEstimate
-      timeEstimate
-      labels {
-        nodes {
-          title
-        }
-      }
-      __typename
-    }
-    __typename
-  }
-}
-
-fragment MergeRequestTimeTrackingFragment on MergeRequest {
-  __typename
-  id
-  humanTotalTimeSpent
-  totalTimeSpent
-  timelogs {
-    nodes {
-      ...TimelogFragment
-      __typename
-    }
-    __typename
-  }
-}
-
-fragment TimelogFragment on Timelog {
-  __typename
-  id
-  timeSpent
-  user {
-    id
-    name
-    __typename
-  }
-  spentAt
-  note {
-    id
-    body
-    __typename
-  }
-  summary
-  userPermissions {
-    adminTimelog
-    __typename
-  }
-}
-`
-        };
-
-        const response = await fetch(`${gitlabServerUrl}/api/graphql`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify(queryData),
-        });
-
-        const res = await response.json();
-        if (res.errors && res.errors.length > 0) {
-            console.warn('GitLab GraphQL errors in getMergeRequestDetail for iid ' + iid + ':', res.errors);
-        }
-        return res.data ? res.data.workspace : null;
-    }
-
-    async function updatePendingStatsBadge() {
-        const badge = document.getElementById('pendingCountBadge');
-        if (!badge) return;
-
-        const storedTasks = (await getStoredIds(WORK_ITEM_KEY)) || [];
-        const storedMRs = (await getStoredIds(MERGE_ITEM_KEY)) || [];
-        const storedKpi = (await getStoredIds('KpiInfo')) || [];
-
-        const isCalculated = (raw) => storedKpi.some(k => isSameItem(raw, k));
-
-        const pendingTasks = storedTasks.filter(t => !isCalculated(t));
-        const pendingMRs = storedMRs.filter(m => !isCalculated(m));
-        const totalPending = pendingTasks.length + pendingMRs.length;
-
-        if (totalPending > 0) {
-            badge.textContent = totalPending > 99 ? '99+' : String(totalPending);
-            badge.style.display = 'inline-flex';
-            const detailTexts = [];
-            if (pendingTasks.length > 0) detailTexts.push(`${pendingTasks.length} task`);
-            const isEn = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof getLanguage === 'function' && getLanguage() === 'en');
-            badge.title = isEn
-                ? `There are ${totalPending} newly added work items (${detailTexts.join(', ')}) not yet calculated in KPI`
-                : `Có ${totalPending} công việc (${detailTexts.join(', ')}) mới thêm chưa được thống kê`;
-        } else {
-            badge.style.display = 'none';
-            badge.textContent = '0';
-        }
-    }
-
-    async function checkAndDisableGetDetailBtn() {
-        const storedTasks = await getStoredIds(WORK_ITEM_KEY);
-        const storedMRs = await getStoredIds(MERGE_ITEM_KEY);
-        const btn = document.getElementById('getDetailBtn');
-        if (!btn) return;
-
-        const isTasksEmpty = !storedTasks || storedTasks.length === 0;
-        const isMRsEmpty = !storedMRs || storedMRs.length === 0;
-
-        if (isTasksEmpty && isMRsEmpty) {
-            btn.disabled = true;
-            btn.classList.add('disabled-btn');
-        } else {
-            btn.disabled = false;
-            btn.classList.remove('disabled-btn');
-        }
-
-        await updatePendingStatsBadge();
-    }
-
-    if (chrome?.storage?.onChanged) {
-        chrome.storage.onChanged.addListener((changes, area) => {
-            if (area === 'local' && (changes[WORK_ITEM_KEY] || changes[MERGE_ITEM_KEY] || changes['KpiInfo'])) {
-                checkAndDisableGetDetailBtn();
-            }
-        });
-    }
-
-    function enableGetDetailBtn() {
-        const btn = document.getElementById('getDetailBtn');
-        if (btn) {
-            btn.disabled = false;
-            btn.classList.remove('disabled-btn');
-        }
-    }
-
-    function parseGitLabUrl(url) {
-        if (!url) return null;
-        const cleanUrl = url.split(/[?#]/)[0].replace(/\/+$/, '');
-
-        const workItemMatch = cleanUrl.match(/^https?:\/\/[^/]+\/(.+?)\/(?:-\/)?work_items\/(\d+)$/);
-        if (workItemMatch) {
-            return {
-                type: 'work_item',
-                projectPath: workItemMatch[1],
-                iid: workItemMatch[2]
-            };
-        }
-
-        const mrMatch = cleanUrl.match(/^https?:\/\/[^/]+\/(.+?)\/(?:-\/)?merge_requests\/(\d+)$/);
-        if (mrMatch) {
-            return {
-                type: 'merge_request',
-                projectPath: mrMatch[1],
-                iid: mrMatch[2]
-            };
-        }
-
-        const issueMatch = cleanUrl.match(/^https?:\/\/[^/]+\/(.+?)\/(?:-\/)?issues\/(\d+)$/);
-        if (issueMatch) {
-            return {
-                type: 'issue',
-                projectPath: issueMatch[1],
-                iid: issueMatch[2]
-            };
-        }
-
-        return null;
-    }
 
 })();
 }
@@ -4075,7 +2739,7 @@ function calculateMonthlyTimesheet(items = [], selYear, selMonth, refDate = new 
         if (!item) return;
         if (Array.isArray(item.timelogs) && item.timelogs.length > 0) {
             item.timelogs.forEach(tl => {
-                const dateIso = normalizeDateToIso(tl.spentAt);
+                const dateIso = getTimelogDate(tl);
                 if (!dateIso) return;
                 if (!itemsByDate.has(dateIso)) {
                     itemsByDate.set(dateIso, []);
@@ -4088,7 +2752,7 @@ function calculateMonthlyTimesheet(items = [], selYear, selMonth, refDate = new 
             });
         } else {
             const rawDate = item.dateIso || item.addedAt || item.createAt || item.spentAt || item.createdAt;
-            const dateIso = normalizeDateToIso(rawDate);
+            const dateIso = getTimelogDate({ spentAt: rawDate });
             if (!dateIso) return;
             if (!itemsByDate.has(dateIso)) {
                 itemsByDate.set(dateIso, []);
@@ -4117,9 +2781,9 @@ function calculateMonthlyTimesheet(items = [], selYear, selMonth, refDate = new 
 
         if (leaveDaysMap && leaveDaysMap[dateIso]) {
             const leave = leaveDaysMap[dateIso];
-            isLeave = true;
             leaveValue = typeof leave === 'number' ? leave : (leave.value !== undefined ? leave.value : (leave.type === 'half' ? 0.5 : 1.0));
-            leaveType = leave.type || (leaveValue === 0.5 ? 'half' : 'full');
+            isLeave = leaveValue > 0;
+            leaveType = leave.type || (leaveValue === 0.5 ? 'half' : leaveValue > 0 ? 'full' : 'none');
             leaveReason = leave.reason || '';
             if (!isWeekend) {
                 targetHours = Math.max(0, Math.round((8.0 - (leaveValue * 8.0)) * 10) / 10);
@@ -4185,6 +2849,7 @@ function calculateMonthlyTimesheet(items = [], selYear, selMonth, refDate = new 
             leaveValue,
             leaveType,
             leaveReason,
+            isOvertime: leaveDaysMap?.[dateIso]?.overtime === true,
             status,
             diffHours,
             taskItems: dayTasks
@@ -4287,6 +2952,13 @@ function renderDailyTimesheet(timesheetData) {
             weekdaySpan.textContent = day.dayName;
 
             header.appendChild(numSpan);
+            if (day.isOvertime) {
+                const overtimeBadge = document.createElement('span');
+                overtimeBadge.className = 'timesheet-overtime-badge';
+                overtimeBadge.textContent = '🌙 OT';
+                overtimeBadge.title = _tr('dayOvertimeLabel', {}, '🌙 Có overtime');
+                header.appendChild(overtimeBadge);
+            }
             header.appendChild(weekdaySpan);
             cell.appendChild(header);
 
@@ -4417,7 +3089,7 @@ async function saveLeaveDay(dateIso, leaveInfo) {
         return new Promise(resolve => {
             chrome.storage.local.get(['KpiLeaveDays'], result => {
                 const leaveMap = result['KpiLeaveDays'] || {};
-                if (!leaveInfo || leaveInfo.type === 'none' || leaveInfo.value === 0) {
+                if (!leaveInfo || (!leaveInfo.overtime && (leaveInfo.type === 'none' || leaveInfo.value === 0))) {
                     delete leaveMap[dateIso];
                 } else {
                     leaveMap[dateIso] = leaveInfo;
@@ -4430,7 +3102,7 @@ async function saveLeaveDay(dateIso, leaveInfo) {
         });
     } else if (typeof window !== 'undefined') {
         if (!window._kpiLeaveDays) window._kpiLeaveDays = {};
-        if (!leaveInfo || leaveInfo.type === 'none' || leaveInfo.value === 0) {
+        if (!leaveInfo || (!leaveInfo.overtime && (leaveInfo.type === 'none' || leaveInfo.value === 0))) {
             delete window._kpiLeaveDays[dateIso];
         } else {
             window._kpiLeaveDays[dateIso] = leaveInfo;
@@ -4501,6 +3173,9 @@ function openDayDetailModal(day) {
         if (radioNone) radioNone.checked = true;
     }
 
+    const overtimeInput = document.getElementById('modalDayOvertime');
+    if (overtimeInput) overtimeInput.checked = day.isOvertime === true;
+
     // Reason
     const reasonInput = document.getElementById('modalLeaveReason');
     if (reasonInput) {
@@ -4520,10 +3195,15 @@ function openDayDetailModal(day) {
                 itemDiv.className = 'modal-task-item';
                 const sp = typeof it.spent === 'number' ? it.spent : (parseFloat(it.spent) || 0);
                 const title = it.title || it.taskUrl || _tr('tableTasks', {}, 'Công việc');
-                itemDiv.innerHTML = `
-                    <span class="task-item-title" title="${title}">${title}</span>
-                    <span class="task-item-spent">${sp}h</span>
-                `;
+                const titleSpan = document.createElement('span');
+                titleSpan.className = 'task-item-title';
+                titleSpan.title = title;
+                titleSpan.textContent = title;
+                const spentSpan = document.createElement('span');
+                spentSpan.className = 'task-item-spent';
+                spentSpan.textContent = `${sp}h`;
+                itemDiv.appendChild(titleSpan);
+                itemDiv.appendChild(spentSpan);
                 listEl.appendChild(itemDiv);
             });
         } else {
@@ -4573,6 +3253,7 @@ function initDayDetailModal() {
                 leaveInfo = { value: 0, type: 'none', reason: '' };
             }
 
+            leaveInfo.overtime = document.getElementById('modalDayOvertime')?.checked === true;
             await saveLeaveDay(dateIso, leaveInfo);
             modal.style.display = 'none';
 
@@ -4588,8 +3269,7 @@ function initDayDetailModal() {
 const analyticsCharts = {
     weeklyEstSpent: null,
     taskType: null,
-    taskStatus: null,
-    kpiTrend: null
+    taskStatus: null
 };
 
 function getWeeksForMonth(selYear, selMonth, lang) {
@@ -4634,86 +3314,6 @@ function getWeeksForMonth(selYear, selMonth, lang) {
     return weeks;
 }
 
-function getItemEstimateHours(item) {
-    if (!item) return 0;
-    const val = item.estimateHour !== undefined ? item.estimateHour :
-                item.timeEstimateHour !== undefined ? item.timeEstimateHour :
-                item.timeEstimate !== undefined ? item.timeEstimate :
-                item.estimate !== undefined ? item.estimate : 0;
-    const num = parseFloat(val);
-    return isNaN(num) ? 0 : num;
-}
-
-function getItemSpentHours(item) {
-    if (!item) return 0;
-    const val = item.spent !== undefined ? item.spent :
-                item.spentTime !== undefined ? item.spentTime :
-                item.totalSpentTime !== undefined ? item.totalSpentTime :
-                item.spentHour !== undefined ? item.spentHour : 0;
-    const num = parseFloat(val);
-    return isNaN(num) ? 0 : num;
-}
-
-function calculateWeeklyKpiScore(weekItems, week = null, refDate = new Date()) {
-    if (!weekItems || weekItems.length === 0) {
-        if (week && week.start) {
-            const refIso = typeof normalizeDateToIso === 'function' ? normalizeDateToIso(refDate || new Date()) : '';
-            if (refIso && week.start > refIso) {
-                return null;
-            }
-        }
-        return 100;
-    }
-
-    const itemsWithScore = weekItems.filter(it => typeof it.kpiScore === 'number');
-    if (itemsWithScore.length === weekItems.length) {
-        const sum = itemsWithScore.reduce((acc, it) => acc + it.kpiScore, 0);
-        return Math.round(sum / itemsWithScore.length);
-    }
-
-    if (typeof calculateStats === 'function' && typeof calculateKpiScore === 'function') {
-        try {
-            const stats = calculateStats(weekItems);
-            if (stats && stats.totalTask > 0) {
-                const info = calculateKpiScore(stats);
-                if (info && typeof info.totalScore === 'number') {
-                    return Math.max(0, Math.min(100, Math.round(info.totalScore * 20)));
-                }
-            }
-        } catch (e) {
-            // fallback
-        }
-    }
-
-    // Base 100 minus late/reopen/deficit penalties
-    let lateCount = 0;
-    let reopenCount = 0;
-    let deficitCount = 0;
-
-    weekItems.forEach(item => {
-        const isLate = (typeof isItemLate === 'function') ? isItemLate(item) : (item.isLate === true || item.progress === 'Trễ hạn');
-        if (isLate) {
-            lateCount++;
-        }
-        if (item.isReopen === true || item.reopened === true || (item.reopenTotal && item.reopenTotal > 0)) {
-            reopenCount++;
-        }
-        const est = getItemEstimateHours(item);
-        const sp = getItemSpentHours(item);
-        if ((est > 0 && sp > est * 1.2) || (sp === 0 && (item.state === 'closed' || item.progress === 'Đúng hạn'))) {
-            deficitCount++;
-        }
-    });
-
-    const total = weekItems.length;
-    let score = 100;
-    score -= Math.round((lateCount / total) * 35);
-    score -= Math.round((reopenCount / total) * 35);
-    score -= Math.round((deficitCount / total) * 20);
-
-    return Math.max(0, Math.min(100, Math.round(score)));
-}
-
 function calculateMonthlyChartData(items = [], selYear, selMonth, refDate = new Date()) {
     let year, month;
     if (typeof selYear === 'string' && selYear.includes('-')) {
@@ -4735,19 +3335,21 @@ function calculateMonthlyChartData(items = [], selYear, selMonth, refDate = new 
         month = now.getMonth() + 1;
     }
 
-    const resolvedRefDate = refDate || new Date();
 
     const isEn = (typeof activeLang !== 'undefined' && activeLang === 'en') || (typeof window !== 'undefined' && window.i18n && window.i18n.getLanguage && window.i18n.getLanguage() === 'en');
-    const weeks = getWeeksForMonth(year, month, isEn ? 'en' : 'vi');
+    const monthRange = getPeriodDateRange('all_month', `${year}-${String(month).padStart(2, '0')}`);
+    const weeks = getWeeksForMonth(year, month, isEn ? 'en' : 'vi').map(week => ({
+        ...week,
+        start: week.start < monthRange.start ? monthRange.start : week.start,
+        end: week.end > monthRange.end ? monthRange.end : week.end
+    }));
     const labels = weeks.map(w => {
         if (w.label) {
             return w.label.replace(' (Tuần này)', '').replace(' (This week)', '');
         }
         return isEn ? `Week ${w.weekNum}` : `Tuần ${w.weekNum}`;
     });
-    const estimateHours = new Array(weeks.length).fill(0);
     const spentHours = new Array(weeks.length).fill(0);
-    const weekItemsMap = weeks.map(() => []);
 
     let plannedCount = 0;
     let unplannedCount = 0;
@@ -4768,14 +3370,14 @@ function calculateMonthlyChartData(items = [], selYear, selMonth, refDate = new 
         const lastWeekEnd = weeks.length > 0 ? weeks[weeks.length - 1].end : '';
         const hasTimelogs = Array.isArray(item.timelogs) && item.timelogs.length > 0;
         const hasTimelogInMonth = hasTimelogs && item.timelogs.some(tl => {
-            const tlIso = normalizeDateToIso(tl.spentAt);
+            const tlIso = getTimelogDate(tl);
             return tlIso && (tlIso.startsWith(monthPrefix) || (firstWeekStart && lastWeekEnd && tlIso >= firstWeekStart && tlIso <= lastWeekEnd));
         });
 
         // If item has a date, verify it's within the month or month weeks
         if (itemIso && !hasTimelogInMonth) {
             const inMonthRange = itemIso.startsWith(monthPrefix) || (firstWeekStart && lastWeekEnd && itemIso >= firstWeekStart && itemIso <= lastWeekEnd);
-            if (!inMonthRange) return;
+            if (!inMonthRange && !isItemActiveInFilter(item, 'all_month', monthPrefix)) return;
         }
 
         // Planned vs Unplanned counts
@@ -4801,55 +3403,20 @@ function calculateMonthlyChartData(items = [], selYear, selMonth, refDate = new 
             inTimeCount++;
         }
 
-        // Assign to week for weeklyData
-        const est = getItemEstimateHours(item);
-        const sp = getItemSpentHours(item);
-
-        weeks.forEach((w, idx) => {
-            const matchByWeekNum = (item.weekNum !== undefined && item.weekNum === w.weekNum);
-            const matchByDate = Boolean(itemIso && itemIso >= w.start && itemIso <= w.end);
-            const matchByTimelog = hasTimelogs && item.timelogs.some(tl => {
-                const tlIso = normalizeDateToIso(tl.spentAt);
-                return Boolean(tlIso && tlIso >= w.start && tlIso <= w.end);
-            });
-            if (matchByWeekNum || matchByDate || matchByTimelog) {
-                if (matchByWeekNum || matchByDate) {
-                    estimateHours[idx] += est;
-                }
-                if (!hasTimelogs && (matchByWeekNum || matchByDate)) {
-                    spentHours[idx] += sp;
-                }
-                weekItemsMap[idx].push(item);
-            }
+        weeks.forEach((week, index) => {
+            spentHours[index] += getItemSpentInRange(item, week.start, week.end);
         });
-
-        if (hasTimelogs) {
-            item.timelogs.forEach(tl => {
-                const logIso = normalizeDateToIso(tl.spentAt);
-                const logH = tl.timeSpentHours !== undefined ? tl.timeSpentHours : (tl.timeSpent ? tl.timeSpent / 3600 : 0);
-                weeks.forEach((w, idx) => {
-                    if (logIso && logIso >= w.start && logIso <= w.end) {
-                        spentHours[idx] += logH;
-                    }
-                });
-            });
-        }
     });
 
     // Format numbers
     for (let i = 0; i < weeks.length; i++) {
-        estimateHours[i] = parseFloat(estimateHours[i].toFixed(2));
         spentHours[i] = parseFloat(spentHours[i].toFixed(2));
     }
-
-    const kpiScores = weeks.map((w, idx) => calculateWeeklyKpiScore(weekItemsMap[idx], w, resolvedRefDate));
 
     return {
         weeklyData: {
             labels,
-            estimateHours,
-            spentHours,
-            kpiScores
+            spentHours
         },
         taskTypeData: {
             plannedCount,
@@ -4875,7 +3442,7 @@ function renderMonthlyCharts(chartData) {
     }
 
     // Safely destroy existing chart instances before re-creating
-    ['weeklyEstSpent', 'taskType', 'taskStatus', 'kpiTrend'].forEach(key => {
+    ['weeklyEstSpent', 'taskType', 'taskStatus'].forEach(key => {
         if (analyticsCharts[key]) {
             try {
                 analyticsCharts[key].destroy();
@@ -4909,14 +3476,6 @@ function renderMonthlyCharts(chartData) {
             data: {
                 labels: chartData.weeklyData.labels,
                 datasets: [
-                    {
-                        label: _tr('chartLabelEstimate', {}, 'Ước tính (Estimate)'),
-                        data: chartData.weeklyData.estimateHours,
-                        backgroundColor: 'rgba(59, 130, 246, 0.75)',
-                        borderColor: 'rgb(59, 130, 246)',
-                        borderWidth: 1,
-                        borderRadius: 4
-                    },
                     {
                         label: _tr('chartLabelSpent', {}, 'Thực tế (Spent)'),
                         data: chartData.weeklyData.spentHours,
@@ -5041,56 +3600,6 @@ function renderMonthlyCharts(chartData) {
         });
     }
 
-    // 4. Line Chart: KPI Score Trend Across Weeks
-    const canvasKpi = getCanvas('chartKpiTrend');
-    if (canvasKpi) {
-        analyticsCharts.kpiTrend = new Chart(canvasKpi, {
-            type: 'line',
-            data: {
-                labels: chartData.weeklyData.labels,
-                datasets: [{
-                    label: _tr('chartLabelKpiScore', {}, 'Điểm KPI'),
-                    data: chartData.weeklyData.kpiScores,
-                    borderColor: '#8b5cf6',
-                    backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                    fill: true,
-                    tension: 0.3,
-                    spanGaps: false,
-                    pointBackgroundColor: '#8b5cf6',
-                    pointRadius: 5,
-                    pointHoverRadius: 7
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: { boxWidth: 12, font: { size: 12 } }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                if (context.raw === null || context.raw === undefined) {
-                                    return ' ' + _tr('chartKpiNoData', {}, 'Điểm KPI: Chưa có dữ liệu');
-                                }
-                                return ' ' + _tr('chartKpiTooltip', { score: context.raw }, `Điểm KPI: ${context.raw} / 100`);
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        min: 0,
-                        max: 100,
-                        title: { display: true, text: _tr('chartAxisKpiPoints', {}, 'Điểm (thang 100)') }
-                    }
-                }
-            }
-        });
-    }
 }
 
 function updateAnalyticsMonthBadge(selectedMonth) {
@@ -5158,6 +3667,7 @@ function renderMonthlyKpiSummaryCards(monthItems = [], selYear, selMonth, timesh
         month = Number(parts[1]);
     }
 
+    const monthRange = getPeriodDateRange('all_month', `${year}-${String(month).padStart(2, '0')}`);
     const items = Array.isArray(monthItems) ? monthItems : [];
     const workItems = items.filter(it => !it.isMR);
     const mrItems = items.filter(it => !!it.isMR);
@@ -5166,33 +3676,13 @@ function renderMonthlyKpiSummaryCards(monthItems = [], selYear, selMonth, timesh
     const totalMRs = mrItems.length;
 
     let totalSpent = 0;
-    let totalEstimate = 0;
     let plannedCount = 0;
     let unplannedCount = 0;
     let inTimeCount = 0;
-    let lateCount = 0;
-    let reopenCount = 0;
-    let noStartDateCount = 0;
-    let noDueDateCount = 0;
-    let noEstimateCount = 0;
-    let noSpentCount = 0;
 
     workItems.forEach(item => {
-        const spent = typeof item.spent === 'number'
-            ? item.spent
-            : (typeof item.spentTime === 'number'
-                ? item.spentTime
-                : (parseFloat(item.spent || item.spentTime || item.totalSpentTime) || 0));
-        const est = typeof item.estimate === 'number'
-            ? item.estimate
-            : (typeof item.estimateHour === 'number'
-                ? item.estimateHour
-                : (typeof item.timeEstimateHour === 'number'
-                    ? item.timeEstimateHour
-                    : (parseFloat(item.estimate || item.timeEstimate) || 0)));
-
+        const spent = getItemSpentInRange(item, monthRange.start, monthRange.end);
         totalSpent += spent;
-        totalEstimate += est;
 
         const isUnplanned = item.isUnplanned === true || item.type === 'Phát sinh' || item.taskType === 'Phát sinh';
         if (isUnplanned) {
@@ -5202,29 +3692,12 @@ function renderMonthlyKpiSummaryCards(monthItems = [], selYear, selMonth, timesh
         }
 
         const isLate = (typeof isItemLate === 'function') ? isItemLate(item) : (item.isLate === true || item.progress === 'Trễ hạn');
-        if (isLate) {
-            lateCount++;
-        } else {
-            inTimeCount++;
-        }
-
-        if (item.reopenTotal > 0 || item.isReopen === true || item.reopened === true) {
-            reopenCount++;
-        }
-
-        if (!item.startDate) noStartDateCount++;
-        if (!item.dueDate) noDueDateCount++;
-        if (est === 0) noEstimateCount++;
-        if (spent === 0) noSpentCount++;
+        if (!isLate) inTimeCount++;
     });
 
     let mrClosedCount = 0;
     mrItems.forEach(mr => {
-        const spent = typeof mr.spent === 'number'
-            ? mr.spent
-            : (typeof mr.spentTime === 'number'
-                ? mr.spentTime
-                : (parseFloat(mr.spent || mr.spentTime || mr.totalSpentTime) || 0));
+        const spent = getItemSpentInRange(mr, monthRange.start, monthRange.end);
         totalSpent += spent;
         const state = (mr.state || '').toLowerCase();
         if (state === 'closed' || state === 'merged') {
@@ -5249,69 +3722,13 @@ function renderMonthlyKpiSummaryCards(monthItems = [], selYear, selMonth, timesh
     const plannedRate = totalWorkItems > 0 ? Math.round((plannedCount / totalWorkItems) * 1000) / 10 : 0;
     const unplannedRate = totalWorkItems > 0 ? Math.round((unplannedCount / totalWorkItems) * 1000) / 10 : 0;
 
-    let totalScore = 0;
-    let badge = { text: _tr('ratingNoData', {}, 'Chưa có dữ liệu'), class: 'badge-neutral', icon: '⚪' };
-
-    if (totalWorkItems > 0) {
-        const getAttitudeScoreHelper = pct => {
-            if (pct >= 80) return 1;
-            if (pct >= 50) return 2;
-            if (pct >= 30) return 3;
-            if (pct >= 10) return 4;
-            return 5;
-        };
-        const getVolumeScoreHelper = pct => {
-            if (pct < 70) return 1;
-            if (pct < 80) return 2;
-            if (pct < 90) return 3;
-            if (pct < 100) return 4;
-            return 5;
-        };
-        const getQualityScoreHelper = pct => {
-            if (pct >= 80) return 1;
-            if (pct >= 50) return 2;
-            if (pct >= 30) return 3;
-            if (pct >= 10) return 4;
-            return 5;
-        };
-
-        const noEstPct = (noEstimateCount / totalWorkItems) * 100;
-        const noStartPct = (noStartDateCount / totalWorkItems) * 100;
-        const noDuePct = (noDueDateCount / totalWorkItems) * 100;
-        const noSpentPct = (noSpentCount / totalWorkItems) * 100;
-        const volPct = (totalSpent / (targetHours || 176)) * 100;
-        const latePct = (lateCount / totalWorkItems) * 100;
-        const reopenPct = (reopenCount / totalWorkItems) * 100;
-
-        const s15 = getAttitudeScoreHelper(noEstPct);
-        const s20 = getAttitudeScoreHelper(noStartPct);
-        const s25 = getAttitudeScoreHelper(noDuePct);
-        const s30 = getAttitudeScoreHelper(noSpentPct);
-        const s35 = getVolumeScoreHelper(volPct);
-        const s40 = getQualityScoreHelper(latePct);
-        const s45 = getQualityScoreHelper(reopenPct);
-
-        const total = (
-            s15 * 0.25 +
-            s20 * 0.25 +
-            s25 * 0.25 +
-            s30 * 0.25 +
-            s35 * 3 +
-            s40 * 3 +
-            s45 * 3
-        ) / 10;
-        totalScore = Math.round(total * 100) / 100;
-
-        if (totalScore >= 4.5) {
-            badge = { text: _tr('ratingExcellent', {}, 'Xuất sắc'), class: 'badge-success', icon: '🌟' };
-        } else if (totalScore >= 3.8) {
-            badge = { text: _tr('ratingGood', {}, 'Tốt'), class: 'badge-info', icon: '🟢' };
-        } else if (totalScore >= 3.0) {
-            badge = { text: _tr('ratingAverage', {}, 'Khá'), class: 'badge-warning', icon: '🟡' };
-        } else {
-            badge = { text: _tr('ratingAttention', {}, 'Cần chú ý'), class: 'badge-danger', icon: '⚠️' };
-        }
-    }
+    const monthStats = calculateStatsForPeriod(items, 'all_month', `${year}-${String(month).padStart(2, '0')}`);
+    monthStats.spentTimeVsWorkingHoursRate = targetHours > 0 ? parseFloat(((totalSpent / targetHours) * 100).toFixed(2)) : 0;
+    const scoreInfo = calculateKpiScoreForStats(monthStats);
+    const totalScore = scoreInfo.totalScore;
+    const badge = { ...scoreInfo.badge };
+    const ratingKey = totalWorkItems === 0 ? 'ratingNoData' : totalScore >= 4.5 ? 'ratingExcellent' : totalScore >= 3.8 ? 'ratingGood' : totalScore >= 3 ? 'ratingAverage' : 'ratingAttention';
+    badge.text = _tr(ratingKey, {}, badge.text);
 
     const roundSpent = Math.round(totalSpent * 10) / 10;
     const leaveStr = (timesheetData && timesheetData.totalLeaveDays > 0)
@@ -5392,7 +3809,7 @@ async function refreshMonthlyAnalytics(selectedMonth = null, kpiData = null) {
     if (!allItems) {
         if (typeof getStoredIds === 'function') {
             try {
-                allItems = await getStoredIds('KpiInfo');
+                allItems = await getDashboardItems();
             } catch (e) {
                 console.warn('Could not load KpiInfo for analytics:', e);
             }
@@ -5449,7 +3866,6 @@ if (typeof window !== 'undefined') {
     window.refreshMonthlyAnalytics = refreshMonthlyAnalytics;
     window.calculateMonthlyTimesheet = calculateMonthlyTimesheet;
     window.renderDailyTimesheet = renderDailyTimesheet;
-    window.calculateWeeklyKpiScore = calculateWeeklyKpiScore;
     window.calculateMonthlyChartData = calculateMonthlyChartData;
     window.renderMonthlyCharts = renderMonthlyCharts;
     window.analyticsCharts = analyticsCharts;
@@ -5473,8 +3889,8 @@ if (typeof module !== 'undefined' && module.exports) {
         renderMonthlyKpiSummaryCards,
         refreshMonthlyAnalytics,
         calculateMonthlyTimesheet,
+        createEstimateVarianceCell,
         renderDailyTimesheet,
-        calculateWeeklyKpiScore,
         calculateMonthlyChartData,
         renderMonthlyCharts,
         analyticsCharts,
@@ -5488,5 +3904,4 @@ if (typeof module !== 'undefined' && module.exports) {
         getItemProgressStatus: typeof getItemProgressStatus === 'function' ? getItemProgressStatus : null
     };
 }
-
 

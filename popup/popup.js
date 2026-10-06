@@ -36,143 +36,6 @@ function openTodoTab() {
     }
 }
 
-function batchAddTasksToWorkItemIds(tasksToAdd, currentWorkItemIds = []) {
-    const existingList = Array.isArray(currentWorkItemIds) ? [...currentWorkItemIds] : [];
-    const result = [...existingList];
-    if (!Array.isArray(tasksToAdd)) return result;
-
-    const checkIsAdded = (typeof isTaskAlreadyAdded === 'function')
-        ? isTaskAlreadyAdded
-        : (typeof window !== 'undefined' && typeof window.isTaskAlreadyAdded === 'function')
-            ? window.isTaskAlreadyAdded
-            : null;
-
-    for (const task of tasksToAdd) {
-        if (!task) continue;
-        const taskId = String(task.id || task.iid || '').trim();
-        const taskIid = task.iid ? String(task.iid).trim() : taskId;
-        const taskHref = (task.href || task.web_url || '').trim();
-
-        let alreadyExists = false;
-        if (checkIsAdded) {
-            alreadyExists = checkIsAdded(task, result);
-        } else {
-            alreadyExists = result.some(item => {
-                if (!item) return false;
-                const itemId = String(item.id || item.iid || '').trim();
-                const itemIid = item.iid ? String(item.iid).trim() : '';
-                const itemHref = (item.href || item.taskUrl || item.web_url || '').trim();
-
-                if (taskHref && itemHref) {
-                    const normP1 = itemHref.replace(/\/work_items\//, '/issues/').split('?')[0].replace(/\/+$/, '');
-                    const normP2 = taskHref.replace(/\/work_items\//, '/issues/').split('?')[0].replace(/\/+$/, '');
-                    if (normP1 === normP2) return true;
-                    return false;
-                }
-
-                if (taskId && (itemId === taskId || (taskIid && itemId === taskIid))) return true;
-                if (taskIid && (itemIid === taskIid || itemIid === taskId)) return true;
-
-                return false;
-            });
-        }
-
-        if (!alreadyExists) {
-            const createdAt = task.createAt || task.createdAt || task.created_at || new Date().toISOString();
-            result.push({
-                id: taskId,
-                iid: taskIid || taskId,
-                href: taskHref,
-                title: task.title || '',
-                taskTitle: task.title || '',
-                createAt: createdAt,
-                addedAt: createdAt
-            });
-        }
-    }
-    return result;
-}
-
-function renderUnaddedKpiBanner(tasks, doc = (typeof document !== 'undefined' ? document : null), lang = null) {
-    if (!doc) return;
-    const banner = doc.getElementById('unaddedKpiBanner');
-    const titleEl = doc.getElementById('unaddedKpiTitle');
-    const listEl = doc.getElementById('unaddedKpiItemsList');
-
-    if (!banner) return;
-
-    let currentLang = 'vi';
-    if (lang === 'vi' || lang === 'en') {
-        currentLang = lang;
-    } else if (typeof getLanguage === 'function') {
-        currentLang = getLanguage();
-    } else if (doc && doc.documentElement && typeof doc.documentElement.lang === 'string') {
-        currentLang = doc.documentElement.lang.startsWith('en') ? 'en' : 'vi';
-    }
-
-    const _tr = (typeof t === 'function')
-        ? t
-        : ((typeof window !== 'undefined' && typeof window.t === 'function') ? window.t : null);
-
-    if (Array.isArray(tasks) && tasks.length > 0) {
-        banner.style.display = 'block';
-        if (titleEl) {
-            if (_tr) {
-                titleEl.textContent = tasks.length === 1
-                    ? (_tr('unaddedBannerTitleSingle', null, currentLang) || _tr('unaddedBannerTitle', { count: 1 }, currentLang))
-                    : (_tr('unaddedBannerTitlePlural', { count: tasks.length }, currentLang) || _tr('unaddedBannerTitle', { count: tasks.length }, currentLang));
-            } else {
-                titleEl.textContent = `Bạn có ${tasks.length} task tạo hôm nay chưa thêm vào KPI!`;
-            }
-        }
-        if (listEl) {
-            listEl.innerHTML = '';
-            const addBtnText = _tr ? _tr('addSingleTask', null, currentLang) : '+ Thêm';
-            tasks.forEach(task => {
-                const itemDiv = doc.createElement('div');
-                itemDiv.className = 'unadded-kpi-item';
-
-                const link = doc.createElement('a');
-                link.className = 'unadded-kpi-item-title';
-                link.href = task.href || '#';
-                link.setAttribute('href', task.href || '#');
-                link.target = '_blank';
-                link.title = task.title || '';
-                link.textContent = `#${task.iid || task.id} ${task.title || ''}`;
-
-                const addBtn = doc.createElement('button');
-                addBtn.className = 'unadded-kpi-add-btn';
-                addBtn.type = 'button';
-                addBtn.setAttribute('data-task-id', String(task.id));
-                addBtn.textContent = addBtnText;
-
-                itemDiv.appendChild(link);
-                itemDiv.appendChild(addBtn);
-                listEl.appendChild(itemDiv);
-            });
-        }
-    } else {
-        banner.style.display = 'none';
-        const toggleBtn = doc.getElementById('toggleUnaddedListBtn');
-        if (toggleBtn) {
-            toggleBtn.textContent = _tr ? _tr('viewDetails', null, currentLang) : 'Chi tiết ▼';
-        }
-        if (listEl) listEl.style.display = 'none';
-        if (typeof chrome !== 'undefined' && chrome.action && typeof chrome.action.setBadgeText === 'function') {
-            chrome.action.setBadgeText({ text: '' });
-        }
-    }
-}
-
-let _utils = {};
-if (typeof require === 'function') {
-    try {
-        _utils = require('../utils.js');
-    } catch (e) {
-        _utils = {};
-    }
-}
-
 function _resolveSanitizeUrl() {
     if (typeof sanitizeGitlabUrl === 'function') return sanitizeGitlabUrl;
     if (typeof window !== 'undefined' && typeof window.sanitizeGitlabUrl === 'function') return window.sanitizeGitlabUrl;
@@ -344,8 +207,7 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
         }
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             try {
-                const data = await chrome.storage.local.get(['UnaddedTodayTasks']);
-                renderUnaddedKpiBanner(data.UnaddedTodayTasks || [], document, newLang);
+
             } catch (e) {}
         }
     }
@@ -380,8 +242,7 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
                     if (typeof applyI18n === 'function' && typeof document !== 'undefined') {
                         applyI18n(document, newLang);
                     }
-                    const data = await chrome.storage.local.get(['UnaddedTodayTasks']);
-                    renderUnaddedKpiBanner(data.UnaddedTodayTasks || [], document, newLang);
+
                 }
             }
         });
@@ -638,8 +499,6 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
             const checkInTimeEl = document.getElementById("checkInTime");
             const checkOutEnabledEl = document.getElementById("checkOutEnabled");
             const checkOutTimeEl = document.getElementById("checkOutTime");
-            const kpiReminderEnabledEl = document.getElementById("kpiReminderEnabled");
-            const kpiReminderMinutesBeforeEl = document.getElementById("kpiReminderMinutesBefore");
             const checkInOutSnoozeEl = document.getElementById("checkInOutSnooze");
             const checkInOutUrlEl = document.getElementById("checkInOutUrl");
             const saveBtn = document.getElementById("saveCheckInOutBtn");
@@ -656,8 +515,6 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
                 'checkOutTime',
                 'checkInOutSnoozeMinutes',
                 'checkInOutUrl',
-                'kpiReminderEnabled',
-                'kpiReminderMinutesBefore'
             ]);
 
             if (settings.checkInEnabled !== undefined) checkInEnabledEl.checked = settings.checkInEnabled;
@@ -666,8 +523,6 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
             if (settings.checkOutTime) checkOutTimeEl.value = settings.checkOutTime;
             if (settings.checkInOutSnoozeMinutes !== undefined) checkInOutSnoozeEl.value = String(settings.checkInOutSnoozeMinutes);
             if (settings.checkInOutUrl) checkInOutUrlEl.value = settings.checkInOutUrl;
-            if (settings.kpiReminderEnabled !== undefined && kpiReminderEnabledEl) kpiReminderEnabledEl.checked = settings.kpiReminderEnabled;
-            if (settings.kpiReminderMinutesBefore !== undefined && kpiReminderMinutesBeforeEl) kpiReminderMinutesBeforeEl.value = String(settings.kpiReminderMinutesBefore);
 
             // Xử lý lưu cài đặt
             saveBtn.addEventListener("click", async () => {
@@ -678,8 +533,6 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
                     checkOutTime: checkOutTimeEl.value || '18:00',
                     checkInOutSnoozeMinutes: parseInt(checkInOutSnoozeEl.value, 10) || 0,
                     checkInOutUrl: checkInOutUrlEl.value.trim(),
-                    kpiReminderEnabled: kpiReminderEnabledEl ? kpiReminderEnabledEl.checked : true,
-                    kpiReminderMinutesBefore: kpiReminderMinutesBeforeEl ? (parseInt(kpiReminderMinutesBeforeEl.value, 10) || 15) : 15
                 };
 
                 await chrome.storage.local.set(newSettings);
@@ -725,187 +578,26 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
 
         await initCheckInOutSettings();
 
-        // Khởi tạo UI cảnh báo task chưa thêm vào KPI
-        async function initUnaddedKpiBannerUI() {
-            const banner = document.getElementById("unaddedKpiBanner");
-            if (!banner) return;
+        // Keep monthly stats in step with background sync.
+        async function refreshMonthStats() {
+            const data = await chrome.storage.local.get(['KpiInfo', 'UserProfile', 'gitlabServerUrl', 'gitlabUrl', 'KpiLeaveDays']);
+            const storedKpi = typeof KpiSync !== 'undefined' ? KpiSync.visibleItems(data) : (data.KpiInfo || []);
 
-            const toggleBtn = document.getElementById("toggleUnaddedListBtn");
-            const addAllBtn = document.getElementById("addAllUnaddedKpiBtn");
-            const itemsList = document.getElementById("unaddedKpiItemsList");
+            const today = new Date();
+            const currentMonthIso = (typeof parseToIsoDate === 'function' ? parseToIsoDate(today) : today.toISOString().slice(0, 10)).slice(0, 7);
+            const m = String(today.getMonth() + 1).padStart(2, '0');
+            const y = today.getFullYear();
 
-            // Toggle chi tiết danh sách
-            if (toggleBtn && itemsList) {
-                toggleBtn.addEventListener("click", () => {
-                    const isHidden = itemsList.style.display === "none" || !itemsList.style.display;
-                    itemsList.style.display = isHidden ? "block" : "none";
-                    const curL = (typeof getLanguage === 'function') ? getLanguage() : 'vi';
-                    const hideText = (typeof t === 'function') ? t('hideDetails', null, curL) : "Thu gọn ▲";
-                    const viewText = (typeof t === 'function') ? t('viewDetails', null, curL) : "Chi tiết ▼";
-                    toggleBtn.textContent = isHidden ? hideText : viewText;
-                });
-            }
-
-            // Nút Thêm tất cả vào KPI
-            if (addAllBtn) {
-                addAllBtn.addEventListener("click", async () => {
-                    if (addAllBtn.disabled) return;
-                    addAllBtn.disabled = true;
-                    try {
-                        const data = await chrome.storage.local.get(['UnaddedTodayTasks', 'WorkItemIds']);
-                        const unadded = Array.isArray(data.UnaddedTodayTasks) ? data.UnaddedTodayTasks : [];
-                        if (unadded.length === 0) return;
-
-                        const currentWorkItems = Array.isArray(data.WorkItemIds) ? data.WorkItemIds : [];
-                        const updatedWorkItems = batchAddTasksToWorkItemIds(unadded, currentWorkItems);
-
-                        await chrome.storage.local.set({
-                            WorkItemIds: updatedWorkItems,
-                            UnaddedTodayTasks: []
-                        });
-
-                        if (typeof chrome !== 'undefined' && chrome.action && typeof chrome.action.setBadgeText === 'function') {
-                            chrome.action.setBadgeText({ text: '' });
-                        }
-                        renderUnaddedKpiBanner([], document);
-                    } finally {
-                        addAllBtn.disabled = false;
-                    }
-                });
-            }
-
-            // Nút Thêm từng task (event delegation)
-            if (itemsList) {
-                itemsList.addEventListener("click", async (e) => {
-                    const addBtn = e.target.closest(".unadded-kpi-add-btn");
-                    if (!addBtn || addBtn.disabled) return;
-                    addBtn.disabled = true;
-                    try {
-                        const taskId = addBtn.getAttribute("data-task-id");
-                        if (!taskId) return;
-
-                        const data = await chrome.storage.local.get(['UnaddedTodayTasks', 'WorkItemIds']);
-                        const unadded = Array.isArray(data.UnaddedTodayTasks) ? data.UnaddedTodayTasks : [];
-                        const taskToAdd = unadded.find(t => String(t.id) === String(taskId));
-                        if (!taskToAdd) return;
-
-                        const currentWorkItems = Array.isArray(data.WorkItemIds) ? data.WorkItemIds : [];
-                        const updatedWorkItems = batchAddTasksToWorkItemIds([taskToAdd], currentWorkItems);
-                        const remainingTasks = unadded.filter(t => String(t.id) !== String(taskId));
-
-                        await chrome.storage.local.set({
-                            WorkItemIds: updatedWorkItems,
-                            UnaddedTodayTasks: remainingTasks
-                        });
-
-                        if (remainingTasks.length === 0) {
-                            if (typeof chrome !== 'undefined' && chrome.action && typeof chrome.action.setBadgeText === 'function') {
-                                chrome.action.setBadgeText({ text: '' });
-                            }
-                        }
-                        renderUnaddedKpiBanner(remainingTasks, document);
-                    } finally {
-                        addBtn.disabled = false;
-                    }
-                });
-            }
-
-            // Lắng nghe thay đổi storage từ background service worker hoặc page content script
-            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-                chrome.storage.onChanged.addListener(async (changes, area) => {
-                    if (area === 'local') {
-                        if (changes.UnaddedTodayTasks) {
-                            renderUnaddedKpiBanner(changes.UnaddedTodayTasks.newValue || [], document);
-                        } else if (changes.WorkItemIds) {
-                            const cur = await chrome.storage.local.get(['UnaddedTodayTasks']);
-                            const tasks = Array.isArray(cur.UnaddedTodayTasks) ? cur.UnaddedTodayTasks : [];
-                            const updatedWorkItems = Array.isArray(changes.WorkItemIds.newValue) ? changes.WorkItemIds.newValue : [];
-                            const checkFn = (typeof isTaskAlreadyAdded === 'function')
-                                ? isTaskAlreadyAdded
-                                : (typeof window !== 'undefined' && typeof window.isTaskAlreadyAdded === 'function')
-                                    ? window.isTaskAlreadyAdded
-                                    : (t, list) => list.some(item => (item.id && String(item.id) === String(t.id)) || (item.href && item.href === t.href));
-                            const stillUnadded = tasks.filter(t => !checkFn(t, updatedWorkItems));
-                            if (stillUnadded.length !== tasks.length) {
-                                await chrome.storage.local.set({ UnaddedTodayTasks: stillUnadded });
-                                if (stillUnadded.length === 0 && chrome.action && typeof chrome.action.setBadgeText === 'function') {
-                                    chrome.action.setBadgeText({ text: '' });
-                                }
-                                renderUnaddedKpiBanner(stillUnadded, document);
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Tải trạng thái ban đầu từ storage
-            const data = await chrome.storage.local.get(['UnaddedTodayTasks']);
-            const unaddedTasks = Array.isArray(data.UnaddedTodayTasks) ? data.UnaddedTodayTasks : [];
-            renderUnaddedKpiBanner(unaddedTasks, document);
-        }
-
-        await initUnaddedKpiBannerUI();
-
-        const storedKpi = await getStoredIds('KpiInfo');
-        const kpiStats = await getStoredIds('KpiStats');
-
-        const today = new Date();
-        const cw = getCurrentWeekRange();
-        const currentMonthIso = (typeof parseToIsoDate === 'function' ? parseToIsoDate(today) : today.toISOString().slice(0, 10)).slice(0, 7);
-        const m = String(today.getMonth() + 1).padStart(2, '0');
-        const y = today.getFullYear();
-
-        // 1. Dữ liệu tuần
-        let weekStats = null;
-        if (Array.isArray(storedKpi) && storedKpi.length > 0) {
-            const currentWeekData = storedKpi.filter(item => isItemActiveInWeek(item, cw.start, cw.end));
-            weekStats = calculateStats(currentWeekData.length > 0 ? currentWeekData : storedKpi, 'current_week');
-        } else if (kpiStats && !Array.isArray(kpiStats) && Object.keys(kpiStats).length > 0) {
-            weekStats = kpiStats;
-        }
-
-        const weekStatsCard = document.querySelector("#week-tab .stats-card");
-        if (!weekStats) {
-            if (weekStatsCard) weekStatsCard.style.display = "none";
-        } else {
-            if (weekStatsCard) weekStatsCard.style.display = "block";
-            const statsTimeEl = document.getElementById("stats-time");
-            if (statsTimeEl) statsTimeEl.textContent = `${cw.startDisplay} - ${cw.endDisplay}`;
-
-            document.getElementById("total-tasks").textContent = weekStats.totalTask || 0;
-            document.getElementById("estimate-time").textContent = (weekStats.totalEstimate || 0) + 'h';
-            document.getElementById("spent-time").textContent = (weekStats.totalSpent || 0) + 'h';
-
-            const dailySpent = parseFloat(weekStats.dailySpentTime) || 0;
-            const dailyTarget = 8;
-            const dailyProgress = Math.min((dailySpent / dailyTarget) * 100, 100);
-            document.getElementById("estimate-time-daily").textContent = `${dailySpent}h / ${dailyTarget}h`;
-            document.getElementById("progress-fill-daily").style.width = `${dailyProgress}%`;
-
-            const totalSpent = parseFloat(weekStats.totalSpent) || 0;
-            const totalTarget = weekStats.totalTimeWorkingInCompany || 48;
-            const totalProgress = Math.min((totalSpent / totalTarget) * 100, 100);
-            document.getElementById("estimate-time-total").textContent = `${totalSpent}h / ${totalTarget}h`;
-            document.getElementById("progress-fill").style.width = `${totalProgress}%`;
-        }
-
-        // 2. Dữ liệu tháng
-        let monthStats = null;
-        if (Array.isArray(storedKpi) && storedKpi.length > 0) {
+            // 2. Dữ liệu tháng
             const currentMonthData = storedKpi.filter(item => isItemActiveInFilter(item, 'all_month', currentMonthIso));
-            monthStats = calculateStats(currentMonthData, 'all_month', currentMonthIso);
-        }
+            const monthStats = calculateStats(currentMonthData, 'all_month', currentMonthIso, null, null, today, data.KpiLeaveDays || {});
 
-        const monthStatsCard = document.querySelector("#month-tab .stats-card");
-        if (!monthStats) {
-            if (monthStatsCard) monthStatsCard.style.display = "none";
-        } else {
+            const monthStatsCard = document.querySelector("#month-tab .stats-card");
             if (monthStatsCard) monthStatsCard.style.display = "block";
             const monthTimeEl = document.getElementById("month-stats-time");
             if (monthTimeEl) monthTimeEl.textContent = `${m}/${y}`;
 
             document.getElementById("month-total-tasks").textContent = monthStats.totalTask || 0;
-            document.getElementById("month-estimate-time").textContent = (monthStats.totalEstimate || 0) + 'h';
             document.getElementById("month-spent-time").textContent = (monthStats.totalSpent || 0) + 'h';
 
             // Đúng hạn
@@ -913,6 +605,8 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
 
             // Dự báo KPI
             const kpiResult = calculateKpiScore(monthStats);
+            const badgeKey = !monthStats.totalTask ? 'kpiBadgeNoData' : kpiResult.totalScore >= 4.5 ? 'kpiBadgeExcellent' : kpiResult.totalScore >= 3.8 ? 'kpiBadgeGood' : kpiResult.totalScore >= 3 ? 'kpiBadgeFair' : 'kpiBadgeAttention';
+            if (typeof t === 'function') kpiResult.badge.text = t(badgeKey);
             const kpiScoreEl = document.getElementById("month-kpi-score");
             if (kpiScoreEl) {
                 kpiScoreEl.innerHTML = `
@@ -921,13 +615,23 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
                 `;
             }
 
-            // Tiến trình tháng (chuẩn 192h)
+            const dailySpent = parseFloat(monthStats.dailySpentTime) || 0;
+            document.getElementById('estimate-time-daily').textContent = `${dailySpent}h / 8h`;
+            document.getElementById('progress-fill-daily').style.width = `${Math.min((dailySpent / 8) * 100, 100)}%`;
+
+            // Monthly target follows the daily audit calendar and leave days.
             const monthSpent = parseFloat(monthStats.totalSpent) || 0;
-            const monthTarget = monthStats.workingHours || 192;
-            const monthProgress = Math.min((monthSpent / monthTarget) * 100, 100);
+            const monthTarget = monthStats.workingHours ?? 0;
+            const monthProgress = monthTarget > 0 ? Math.min((monthSpent / monthTarget) * 100, 100) : 0;
             document.getElementById("month-spent-total").textContent = `${monthSpent}h / ${monthTarget}h`;
             document.getElementById("month-progress-fill").style.width = `${monthProgress}%`;
         }
+        await refreshMonthStats();
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area === 'local' && ['KpiInfo', 'KpiLeaveDays', 'UserProfile', 'gitlabServerUrl', 'appLanguage'].some(key => changes[key])) refreshMonthStats().catch(console.error);
+        });
+        if (typeof KpiSync !== 'undefined') await KpiSync.mountUI();
+
     }
 
     chrome.storage.local.getBytesInUse(null, (bytesInUse) => {
@@ -943,8 +647,6 @@ async function fetchUserProfile(token, serverUrl = 'https://gitlab.com', fetchFn
 })();
 
 if (typeof window !== 'undefined') {
-    window.batchAddTasksToWorkItemIds = batchAddTasksToWorkItemIds;
-    window.renderUnaddedKpiBanner = renderUnaddedKpiBanner;
     window.updateTokenHelpLink = updateTokenHelpLink;
     window.handleSaveServerUrl = handleSaveServerUrl;
     window.fetchUserProfile = fetchUserProfile;
@@ -957,8 +659,6 @@ if (typeof module !== 'undefined' && module.exports) {
         openNoteTab,
         openTodoWindow,
         openTodoTab,
-        batchAddTasksToWorkItemIds,
-        renderUnaddedKpiBanner,
         updateTokenHelpLink,
         handleSaveServerUrl,
         fetchUserProfile,

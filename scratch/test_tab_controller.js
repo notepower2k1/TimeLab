@@ -125,7 +125,6 @@ createMockElement('timesheetCalendarGrid', 'div');
 createMockElement('chartWeeklyEstSpent', 'canvas');
 createMockElement('chartTaskType', 'canvas');
 createMockElement('chartTaskStatus', 'canvas');
-createMockElement('chartKpiTrend', 'canvas');
 createMockElement('monthSelect', 'select');
 mockDomElements['monthSelect'].value = '2026-09';
 createMockElement('timeFilterSelect', 'select');
@@ -243,6 +242,29 @@ console.log('✔ Passed: Tab controller functions exist and are exported');
         assert(html.includes('66.7') || html.includes('67'), 'On-time card should reflect on-time percentage');
 
         console.log('✔ Passed: renderMonthlyKpiSummaryCards renders 5 cards with accurate aggregated metrics');
+    }
+
+    // The monthly summary must agree with the audit for tasks spanning months.
+    {
+        const items = [{
+            state: 'opened', estimate: 40, spent: 12, addedAt: '2026-09-01',
+            timelogs: [
+                { spentAt: '2026-09-15', timeSpent: 28800 },
+                { spentAt: '2026-10-02', timeSpent: 7200 },
+                { spentAt: '2026-10-05', timeSpent: 7200 }
+            ]
+        }, {
+            isMR: true, state: 'merged', spent: 20, addedAt: '2026-09-01',
+            timelogs: [{ spentAt: '2026-10-05', timeSpent: 3600 }]
+        }];
+        const timesheet = calculateMonthlyTimesheet(items, 2026, 10, new Date(2026, 9, 31));
+        renderMonthlyKpiSummaryCards(items, 2026, 10, timesheet);
+        assert.strictEqual(timesheet.totalHours, 5);
+        const utils = require('../utils.js');
+        const expectedScore = utils.calculateKpiScore(utils.calculateStats(items, 'all_month', '2026-10')).totalScore;
+        assert(mockDomElements['monthlyKpiSummaryCards'].innerHTML.includes(expectedScore.toFixed(2) + ' '), 'Monthly card must use the shared monthly KPI score');
+        assert(mockDomElements['monthlyKpiSummaryCards'].innerHTML.includes('5h '), 'Monthly hours card must show 5h, not the 32h lifetime total');
+        console.log('✔ Passed: Monthly cards and timesheet agree for ongoing tasks and MRs across months');
     }
 
     // 5. Empty Data Handling for Summary Cards

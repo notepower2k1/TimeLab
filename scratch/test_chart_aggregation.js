@@ -13,14 +13,12 @@ try {
 
 let pageModule;
 let calculateMonthlyChartData;
-let calculateWeeklyKpiScore;
 let renderMonthlyCharts;
 let analyticsCharts;
 
 try {
     pageModule = require('../page/page.js');
     calculateMonthlyChartData = pageModule.calculateMonthlyChartData;
-    calculateWeeklyKpiScore = pageModule.calculateWeeklyKpiScore;
     renderMonthlyCharts = pageModule.renderMonthlyCharts;
     analyticsCharts = pageModule.analyticsCharts;
 } catch (err) {
@@ -29,7 +27,7 @@ try {
 
 // 1. Function existence
 assert.strictEqual(typeof calculateMonthlyChartData, 'function', 'calculateMonthlyChartData should be exported');
-assert.strictEqual(typeof calculateWeeklyKpiScore, 'function', 'calculateWeeklyKpiScore should be exported');
+assert.strictEqual(pageModule.calculateWeeklyKpiScore, undefined, 'Weekly KPI scoring must be removed');
 assert.strictEqual(typeof renderMonthlyCharts, 'function', 'renderMonthlyCharts should be exported');
 assert(analyticsCharts !== undefined, 'analyticsCharts should be exported');
 
@@ -40,14 +38,11 @@ assert(analyticsCharts !== undefined, 'analyticsCharts should be exported');
     assert(chartData.taskTypeData, 'chartData must have taskTypeData');
     assert(chartData.taskStatusData, 'chartData must have taskStatusData');
 
-    const { labels, estimateHours, spentHours, kpiScores } = chartData.weeklyData;
+    const { labels, spentHours } = chartData.weeklyData;
     // September 2026 has 5 weeks (Aug 31 - Oct 4)
     assert.strictEqual(labels.length, 5, 'September 2026 should have 5 weeks');
-    assert.strictEqual(estimateHours.length, 5, 'estimateHours should have 5 entries');
     assert.strictEqual(spentHours.length, 5, 'spentHours should have 5 entries');
-    assert.strictEqual(kpiScores.length, 5, 'kpiScores should have 5 entries');
 
-    assert.deepStrictEqual(estimateHours, [0, 0, 0, 0, 0], 'Empty items should yield 0 estimate hours');
     assert.deepStrictEqual(spentHours, [0, 0, 0, 0, 0], 'Empty items should yield 0 spent hours');
 
     // Week 1 should start on 31/08 and end on 06/09
@@ -84,23 +79,18 @@ assert(analyticsCharts !== undefined, 'analyticsCharts should be exported');
     const chartData = calculateMonthlyChartData(mockItems, 2026, 9);
 
     // Week 1: 10 + 6 = 16 est, 8 + 6 = 14 spent
-    assert.strictEqual(chartData.weeklyData.estimateHours[0], 16, 'Week 1 estimate should be 16');
     assert.strictEqual(chartData.weeklyData.spentHours[0], 14, 'Week 1 spent should be 14');
 
     // Week 2: 15 est, 16.5 spent
-    assert.strictEqual(chartData.weeklyData.estimateHours[1], 15, 'Week 2 estimate should be 15');
     assert.strictEqual(chartData.weeklyData.spentHours[1], 16.5, 'Week 2 spent should be 16.5');
 
     // Week 3: 8 est, 7 spent
-    assert.strictEqual(chartData.weeklyData.estimateHours[2], 8, 'Week 3 estimate should be 8');
     assert.strictEqual(chartData.weeklyData.spentHours[2], 7, 'Week 3 spent should be 7');
 
     // Week 4: 4 est, 4 spent
-    assert.strictEqual(chartData.weeklyData.estimateHours[3], 4, 'Week 4 estimate should be 4');
     assert.strictEqual(chartData.weeklyData.spentHours[3], 4, 'Week 4 spent should be 4');
 
     // Week 5: 0 est, 0 spent
-    assert.strictEqual(chartData.weeklyData.estimateHours[4], 0, 'Week 5 estimate should be 0');
     assert.strictEqual(chartData.weeklyData.spentHours[4], 0, 'Week 5 spent should be 0');
 
     console.log('✔ Passed: Weekly grouping and hours aggregation test');
@@ -147,63 +137,23 @@ assert(analyticsCharts !== undefined, 'analyticsCharts should be exported');
     console.log('✔ Passed: Task status distribution test (In-time / Late / Open)');
 }
 
-// 7. Weekly KPI Score Trend Test
+// A carry-over task with no logs this month still belongs in the monthly task counts.
 {
-    const mockItems = [
-        // Week 1: all good, in-time, closed
-        { addedAt: '2026-09-01', isLate: false, state: 'closed', timeEstimate: 10, totalSpentTime: 10 },
-        // Week 2: all late, penalties apply
-        { addedAt: '2026-09-08', isLate: true, state: 'closed', timeEstimate: 10, totalSpentTime: 10 }
-    ];
-
-    const chartData = calculateMonthlyChartData(mockItems, 2026, 9);
-    const { kpiScores } = chartData.weeklyData;
-
-    assert.strictEqual(kpiScores.length, 5, 'Should have 5 weekly KPI scores');
-    kpiScores.forEach(score => {
-        assert(score === null || (score >= 0 && score <= 100), `KPI score ${score} must be between 0 and 100 or null`);
-    });
-
-    // Week 1 score should be higher than Week 2 score (Week 2 had late tasks)
-    assert(kpiScores[0] > kpiScores[1], `Week 1 KPI score (${kpiScores[0]}) should be higher than Week 2 (${kpiScores[1]})`);
-
-    console.log('✔ Passed: Weekly KPI score trend test');
+    const data = calculateMonthlyChartData([{
+        addedAt: '2026-08-01', state: 'opened', type: 'Kế hoạch', spent: 40,
+        timelogs: [{ spentAt: '2026-08-15', timeSpentHours: 40 }]
+    }], 2026, 9);
+    assert.strictEqual(data.taskTypeData.plannedCount, 1);
+    assert.strictEqual(data.taskStatusData.openCount, 1);
+    assert.strictEqual(data.weeklyData.spentHours.reduce((sum, hours) => sum + hours, 0), 0);
 }
 
-// 8. Future Empty Weeks KPI Omission Test
+// Weekly charts describe hours; they must never create a separate KPI score.
 {
-    // When refDate is mid-month: 2026-09-15 (in Week 3: 2026-09-14 to 2026-09-20)
-    // Week 1 (08/31 - 09/06): start <= refDate -> 100
-    // Week 2 (09/07 - 09/13): start <= refDate -> 100
-    // Week 3 (09/14 - 09/20): start <= refDate -> 100
-    // Week 4 (09/21 - 09/27): start > refDate -> null
-    // Week 5 (09/28 - 10/04): start > refDate -> null
-    const refDate = '2026-09-15';
-    const chartData = calculateMonthlyChartData([], 2026, 9, refDate);
-    assert.deepStrictEqual(chartData.weeklyData.kpiScores, [100, 100, 100, null, null],
-        'Future empty weeks must have null KPI scores');
-
-    // If future week has items, score must be calculated (not null)
-    const itemsWithFutureTask = [
-        { addedAt: '2026-09-22', isLate: false, state: 'closed', timeEstimate: 5, spent: 5 }
-    ];
-    const dataWithFuture = calculateMonthlyChartData(itemsWithFutureTask, 2026, 9, refDate);
-    assert.strictEqual(typeof dataWithFuture.weeklyData.kpiScores[3], 'number',
-        'Future week with items should compute numeric KPI score');
-    assert.strictEqual(dataWithFuture.weeklyData.kpiScores[4], null,
-        'Future week without items should remain null');
-
-    // Direct unit test of calculateWeeklyKpiScore
-    if (typeof calculateWeeklyKpiScore === 'function') {
-        assert.strictEqual(calculateWeeklyKpiScore([], { start: '2026-09-21' }, '2026-09-15'), null,
-            'Empty future week returns null');
-        assert.strictEqual(calculateWeeklyKpiScore([], { start: '2026-09-01' }, '2026-09-15'), 100,
-            'Empty past week returns 100');
-        assert.strictEqual(calculateWeeklyKpiScore([]), 100,
-            'Empty week without week info defaults to 100');
-    }
-
-    console.log('✔ Passed: Future empty weeks KPI omission test');
+    const data = calculateMonthlyChartData([], 2026, 9);
+    assert.strictEqual(data.weeklyData.kpiScores, undefined);
+    assert.strictEqual(data.weeklyData.estimateHours, undefined);
+    console.log('✔ Passed: Weekly charts only contain logged hours');
 }
 
 // 9. renderMonthlyCharts & Lifecycle Management Test
@@ -213,7 +163,7 @@ assert(analyticsCharts !== undefined, 'analyticsCharts should be exported');
     delete global.Chart;
     assert.doesNotThrow(() => {
         renderMonthlyCharts({
-            weeklyData: { labels: [], estimateHours: [], spentHours: [], kpiScores: [] },
+            weeklyData: { labels: [], spentHours: [] },
             taskTypeData: { plannedCount: 0, unplannedCount: 0 },
             taskStatusData: { inTimeCount: 0, lateCount: 0, openCount: 0 }
         });
@@ -239,7 +189,6 @@ assert(analyticsCharts !== undefined, 'analyticsCharts should be exported');
         chartWeeklyEstSpent: { id: 'chartWeeklyEstSpent', getContext: () => ({}) },
         chartTaskType: { id: 'chartTaskType', getContext: () => ({}) },
         chartTaskStatus: { id: 'chartTaskStatus', getContext: () => ({}) },
-        chartKpiTrend: { id: 'chartKpiTrend', getContext: () => ({}) }
     };
 
     global.document = {
@@ -249,27 +198,25 @@ assert(analyticsCharts !== undefined, 'analyticsCharts should be exported');
     const sampleChartData = {
         weeklyData: {
             labels: ['Tuần 1', 'Tuần 2'],
-            estimateHours: [10, 20],
-            spentHours: [8, 18],
-            kpiScores: [95, 85]
+            spentHours: [8, 18]
         },
         taskTypeData: { plannedCount: 8, unplannedCount: 2 },
         taskStatusData: { inTimeCount: 7, lateCount: 2, openCount: 1 }
     };
 
-    // First render: creates 4 charts
+    // First render: creates 3 charts
     renderMonthlyCharts(sampleChartData);
 
+    assert.strictEqual(analyticsCharts.kpiTrend, undefined, 'No weekly KPI chart');
+    assert.strictEqual(analyticsCharts.weeklyEstSpent?.config.data.datasets.length, 1, 'Only logged hours are plotted');
     assert(analyticsCharts.weeklyEstSpent instanceof MockChart, 'weeklyEstSpent chart instance created');
     assert(analyticsCharts.taskType instanceof MockChart, 'taskType chart instance created');
     assert(analyticsCharts.taskStatus instanceof MockChart, 'taskStatus chart instance created');
-    assert(analyticsCharts.kpiTrend instanceof MockChart, 'kpiTrend chart instance created');
 
     const firstRunInstances = [
         analyticsCharts.weeklyEstSpent,
         analyticsCharts.taskType,
         analyticsCharts.taskStatus,
-        analyticsCharts.kpiTrend
     ];
 
     // Check responsive and maintainAspectRatio

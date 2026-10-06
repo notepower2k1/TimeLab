@@ -23,7 +23,7 @@ Tiện ích tương thích 100% với cả **GitLab.com** (public) lẫn các m�
 ## 📸 Hình ảnh mẫu giao diện (Screenshots)
 
 ### 1. Bảng điều khiển KPI & Danh sách công việc (KPI Dashboard & Popup)
-Theo dõi tổng hợp thời gian Estimate vs Spent, tỷ lệ hoàn thành đúng hạn, phân loại công việc và thẻ điều khiển nhanh trên popup trình duyệt.
+Theo dõi giờ đã log trong kỳ, tỷ lệ hoàn thành đúng hạn và phân loại công việc. Mỗi dòng hiển thị Estimate toàn task, Spent trong kỳ và Spent toàn task; chênh lệch dùng Spent toàn bộ vòng đời trừ Estimate, chỉ hiển thị khi task đã đóng.
 
 ![KPI Dashboard & Work Items](docs/store-assets/screenshot1_dashboard_1280x800.png)
 
@@ -49,11 +49,10 @@ Nút bấm thông minh được nhúng thẳng vào giao diện GitLab Issue / M
 - **Tự động tính toán điểm KPI**: Đánh giá dựa trên độ chính xác ước lượng (estimate accuracy), tốc độ hoàn thành (velocity) và tỷ lệ tuân thủ thời gian log giờ (target 8h/ngày).
 - **Phân loại công việc đa chiều**: Kế hoạch (Planned) vs Phát sinh (Unplanned), Đúng hạn (On-time) vs Trễ hạn (Late), đếm số lần Reopen.
 - **Biểu đồ trực quan (Offline Chart.js)**:
-  - So sánh Estimate vs Spent theo từng tuần.
+  - Phân bổ giờ đã log theo từng tuần trong tháng.
   - Cơ cấu công việc theo loại (Pie chart: Planned vs Unplanned).
   - Tỉ lệ trạng thái công việc (Doughnut chart: Đúng hạn, Trễ hạn, Đang mở).
-  - Đường xu hướng biến động điểm KPI qua các tuần trong tháng.
-- **Xuất báo cáo Excel (.xlsx)**: Xuất bảng KPI tuần và tháng ra file Excel chuẩn định dạng chỉ với 1 cú click (tích hợp offline engine ExcelJS).
+- **Xuất báo cáo Excel (.xlsx)**: Xuất bảng KPI tháng ra file Excel chuẩn định dạng chỉ với 1 cú click (tích hợp offline engine ExcelJS).
 
 ### 2. 📅 Chấm công hàng ngày (Daily Timesheet Audit)
 - **Lưới lịch tháng thông minh**: Hiển thị tổng giờ làm từng ngày so với chỉ tiêu chuẩn (8 giờ/ngày).
@@ -65,10 +64,14 @@ Nút bấm thông minh được nhúng thẳng vào giao diện GitLab Issue / M
 - Hiển thị cây công việc con (child tasks / task items) kèm thống kê tổng quan: Tổng số task, tổng estimate, tổng spent, chênh lệch (difference) và tỉ lệ đúng hạn.
 - Hỗ trợ thêm nhanh từng task hoặc thêm toàn bộ (+ Add All to KPI) vào danh sách theo dõi.
 
-### 4. ⏰ Cảnh báo cuối ngày (End-of-Day Unadded Tasks Reminder)
-- Tự động rà soát ngầm các công việc bạn tạo hoặc thực hiện trong ngày trên GitLab.
-- Nhắc nhở qua **Desktop Notification** và huy hiệu cảnh báo (`!`) trên icon extension trước giờ tan ca nếu còn công việc chưa được thêm vào bảng KPI.
-- Hỗ trợ nút **"Thêm tất cả" (1-click batch add)** ngay trên banner cảnh báo của Popup.
+### 4. 🔄 Tự động đồng bộ task (Automatic Task Sync)
+Mỗi Work Item có timelog/lịch sử nằm trong một trang được lấy bằng một query GraphQL gộp. Chỉ gọi thêm khi cần phân trang.
+- **Chu kỳ chủ động**: Bật/tắt tự động đồng bộ, chọn 5 / 15 / 30 / 60 phút (mặc định 15 phút) trong tab Công cụ của popup.
+- **Giờ chạy nền**: Thứ Hai–thứ Sáu, theo giờ check-in → check-out đã setting, độc lập với công tắc nhắc chấm công. Task/log ngoài giờ và cuối tuần được lấy bù trong lượt tiếp theo; giữ ngày log thực tế.
+- **Sync thường và dữ liệu ban đầu**: Chỉ tự tìm Task/Work Item con do người dùng tạo. Lượt đầu tìm task tạo/cập nhật trong tháng và task cũ còn mở; không lấy toàn bộ lịch sử task đã đóng. Các lượt sau tìm task mới/thay đổi từ mốc discovery. Lấy chi tiết mục chưa có dữ liệu, đã thay đổi từ lần đọc trước hoặc có hoạt động hôm nay; task lịch sử không thay đổi giữ cache. Issue cha giữ làm tham chiếu. Metadata kiểm tra theo nhóm project, tối đa 100 ID mỗi nhóm và phân trang đầy đủ.
+- **Sync bù**: Giữ mốc tìm task và hàng đợi khi trình duyệt đóng, mất mạng hoặc sang ngày/tháng mới. Task tạo tối thứ Sáu hoặc thay đổi cuối tuần được tải chi tiết tự động vào thứ Hai; không cần bấm Re-sync để bù ngày cũ. Task lấy lỗi giữ dữ liệu cũ và được thử lại; task đã bỏ theo dõi không tự thêm lại.
+- **Re-sync toàn bộ**: Nút trong cài đặt cập nhật tất cả Work Item/MR đã theo dõi, kể cả cuối tuần, ngoài giờ hoặc khi auto-sync đang tắt. UI hiển thị riêng thời điểm sync thường và lần Re-sync toàn bộ.
+- **Xuất KPI tháng**: Tự Re-sync đầy đủ, tìm thêm task liên quan đến tháng đang chọn rồi mới tạo Excel. Nút hiển thị trạng thái chờ và tránh xuất trùng; nếu sync lỗi/chưa hoàn tất thì không xuất dữ liệu cũ. File Excel là bản báo cáo tại thời điểm xuất, không thêm chức năng khóa báo cáo tháng trong ứng dụng.
 
 ### 5. 🌐 Hỗ trợ GitLab Cloud & Tùy chỉnh máy chủ Self-Hosted
 - Hỗ trợ cả **GitLab.com** lẫn các domain doanh nghiệp nội bộ (ví dụ: `https://gitlab.mycompany.com`).
@@ -128,12 +131,14 @@ Nút bấm thông minh được nhúng thẳng vào giao diện GitLab Issue / M
    - Nhấn vào liên kết *"Lấy Token tại đây"* để mở nhanh trang tạo Personal Access Token trên GitLab (cần cấp quyền `api` hoặc `read_api`).
    - Dán token vào ô và nhấn **Đăng nhập**.
 
-2. **Thu thập công việc**:
-   - Khi xem một Issue / Merge Request trên GitLab, nhấn nút **"Add to KPI"** hoặc mở modal **"KPI Summary"** để chọn các task con đưa vào danh sách theo dõi.
+2. **Thiết lập đồng bộ**:
+   - Trong tab **Công cụ**, chọn chu kỳ tự động đồng bộ và lưu giờ check-in / check-out.
+   - Task/Work Item con tạo/cập nhật trong tháng và task cũ còn mở được tìm tự động ở lượt đầu; task/MR đã theo dõi tiếp tục được cập nhật.
+   - Dùng **Add to KPI** hoặc **KPI Summary** trên GitLab để theo dõi thêm công việc khác. Chọn **Re-sync toàn bộ** khi cần đối chiếu dữ liệu; xuất Excel tháng sẽ tự chạy Re-sync trước.
 
 3. **Xem Dashboard & Báo cáo**:
    - Nhấn **Open Dashboard** từ popup để mở giao diện phân tích toàn diện.
-   - Chọn tháng, tuần hoặc ngày cần xem.
+   - Chọn tháng để xem KPI; dùng bộ lọc tuần/ngày khi cần xem chi tiết công việc.
    - Xem lưới chấm công Timesheet, kiểm tra biểu đồ và tải file Excel báo cáo khi cần.
 
 ---
@@ -143,7 +148,8 @@ Nút bấm thông minh được nhúng thẳng vào giao diện GitLab Issue / M
 ```text
 KPIGitlabExtension/
 ├── manifest.json              # Cấu hình Chrome Extension (Manifest V3)
-├── background.js              # Service Worker: Lập lịch alarms, thông báo, dynamic content scripts
+├── background.js              # Service Worker: Lập lịch sync, thông báo, dynamic content scripts
+├── sync.js                    # GitLab API, sync bù, điều phối dữ liệu và setting sync
 ├── utils.js                   # Tiện ích dùng chung: Chuẩn hóa URL, ngày giờ, storage, filter KPI
 ├── i18n.js                    # Động cơ đa ngôn ngữ & từ điển song ngữ VI / EN
 ├── content_issue.js           # Content Script nhúng nút & modal KPI vào trang Issue / Work Item
@@ -175,8 +181,11 @@ KPIGitlabExtension/
 Dự án sở hữu pipeline kiểm thử hồi quy tự động toàn diện:
 
 ```bash
-# Chạy toàn bộ 12 test suites và kiểm tra 24 chỉ tiêu bảo mật / cú pháp:
+# Chạy toàn bộ 13 test suites và kiểm tra 25 chỉ tiêu bảo mật / cú pháp:
 node scratch/test_full_suite.js
+
+# Smoke test trên Chrome thật, profile tạm và GitLab API giả lập (Node 22+, Chrome CDP Extensions):
+node scratch/test_browser_sync.js
 
 # Đóng gói tự động bản build sản phẩm sạch cho Chrome Web Store:
 node scratch/build_release_zip.js
