@@ -1611,7 +1611,7 @@ async function fetchTaskDetail(projectPath, iidOrTask, token, customEndpoint = n
 
     const dynamicOrigin = (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin !== 'null')
         ? window.location.origin
-        : ['https://gitlab', 'widosoft', 'com'].join('.');
+        : 'https://gitlab.com';
     const endpoint = customEndpoint || `${dynamicOrigin}/api/graphql`;
 
     try {
@@ -1749,7 +1749,7 @@ async function fetchParentTaskWithChildren(projectPath, parentIid, token, custom
 
     const dynamicOrigin = (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin !== 'null')
         ? window.location.origin
-        : ['https://gitlab', 'widosoft', 'com'].join('.');
+        : 'https://gitlab.com';
     const endpoint = customEndpoint || `${dynamicOrigin}/api/graphql`;
 
     try {

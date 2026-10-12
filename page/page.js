@@ -87,6 +87,7 @@ if (typeof isItemLate === 'undefined' && typeof require === 'function') {
     }
 }
 
+/* @company-start */
 function isWidosoftGitlab(url) {
     if (!url || typeof url !== 'string') return false;
     return url.toLowerCase().includes('gitlab.widosoft');
@@ -100,6 +101,16 @@ function updateExportButtonsVisibility(serverUrl) {
         exportMonthBtn.style.display = isWido ? '' : 'none';
     }
 }
+/* @company-end */
+/* @public-start
+function updateExportButtonsVisibility(serverUrl) {
+    if (typeof document === 'undefined') return;
+    const exportMonthBtn = document.getElementById('exportMonthKpiBtn');
+    if (exportMonthBtn) {
+        exportMonthBtn.style.display = 'none';
+    }
+}
+@public-end */
 
 if (typeof document !== 'undefined') {
 (async () => {
@@ -198,6 +209,13 @@ if (typeof document !== 'undefined') {
     const startDateInput = document.getElementById('startDateInput');
     const endDateInput = document.getElementById('endDateInput');
     const applyRangeBtn = document.getElementById('applyRangeBtn');
+    const dateFilterInput = document.getElementById('dateFilterInput');
+    const clearDateFilterBtn = document.getElementById('clearDateFilterBtn');
+    const pillCurrentMonth = document.getElementById('pillCurrentMonth');
+    const pillToday = document.getElementById('pillToday');
+    const pillCurrentWeek = document.getElementById('pillCurrentWeek');
+    const reSyncBtn = document.getElementById('reSyncBtn');
+    let fpInstance = null;
 
     let currentPage = 1;
     let pageSize = 25;
@@ -712,10 +730,190 @@ if (typeof document !== 'undefined') {
         return items.length > 0;
     }
 
+    function updateActivePill(activeId) {
+        [pillCurrentMonth, pillToday, pillCurrentWeek].forEach(p => {
+            if (p) {
+                if (p.id === activeId) p.classList.add('active');
+                else p.classList.remove('active');
+            }
+        });
+    }
+
+    function initFlatpickrCalendar() {
+        if (typeof flatpickr === 'undefined' || !dateFilterInput) return;
+        const activeLang = (typeof getLanguage === 'function') ? getLanguage() : 'vi';
+        const isEn = activeLang === 'en';
+        const viLocale = {
+            weekdays: { shorthand: ["CN", "T2", "T3", "T4", "T5", "T6", "T7"], longhand: ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"] },
+            months: { shorthand: ["Th1", "Th2", "Th3", "Th4", "Th5", "Th6", "Th7", "Th8", "Th9", "Th10", "Th11", "Th12"], longhand: ["Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", "Tháng 5", "Tháng 6", "Tháng 7", "Tháng 8", "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"] },
+            firstDayOfWeek: 1,
+            rangeSeparator: " đến "
+        };
+
+        if (fpInstance) {
+            try { fpInstance.destroy(); } catch (e) {}
+        }
+
+        fpInstance = flatpickr(dateFilterInput, {
+            mode: "range",
+            dateFormat: "d/m/Y",
+            locale: isEn ? "default" : viLocale,
+            allowInput: false,
+            showMonths: 1,
+            onMonthChange: async (selectedDates, dateStr, instance) => {
+                const newMonthIso = `${instance.currentYear}-${String(instance.currentMonth + 1).padStart(2, '0')}`;
+                if (monthSelect) monthSelect.value = newMonthIso;
+                updateAnalyticsMonthBadge(newMonthIso);
+                if (!selectedDates || selectedDates.length === 0) {
+                    if (timeFilterSelect) timeFilterSelect.value = 'all_month';
+                    updateActivePill('pillCurrentMonth');
+                    currentPage = 1;
+                    await applyFilter();
+                }
+            },
+            onYearChange: async (selectedDates, dateStr, instance) => {
+                const newMonthIso = `${instance.currentYear}-${String(instance.currentMonth + 1).padStart(2, '0')}`;
+                if (monthSelect) monthSelect.value = newMonthIso;
+                updateAnalyticsMonthBadge(newMonthIso);
+                if (!selectedDates || selectedDates.length === 0) {
+                    if (timeFilterSelect) timeFilterSelect.value = 'all_month';
+                    updateActivePill('pillCurrentMonth');
+                    currentPage = 1;
+                    await applyFilter();
+                }
+            },
+            onChange: async (selectedDates) => {
+                if (selectedDates.length === 1) {
+                    const d1 = parseToIsoDate(selectedDates[0]);
+                    const d1Month = d1.slice(0, 7);
+                    if (monthSelect) monthSelect.value = d1Month;
+                    updateAnalyticsMonthBadge(d1Month);
+                    if (timeFilterSelect) timeFilterSelect.value = 'day:' + d1;
+                    updateActivePill(null);
+                    currentPage = 1;
+                    await applyFilter();
+                } else if (selectedDates.length === 2) {
+                    const d1 = parseToIsoDate(selectedDates[0]);
+                    const d2 = parseToIsoDate(selectedDates[1]);
+                    const d1Month = d1.slice(0, 7);
+                    if (monthSelect) monthSelect.value = d1Month;
+                    updateAnalyticsMonthBadge(d1Month);
+                    if (timeFilterSelect) timeFilterSelect.value = 'custom_range';
+                    if (startDateInput) startDateInput.value = d1;
+                    if (endDateInput) endDateInput.value = d2;
+                    updateActivePill(null);
+                    currentPage = 1;
+                    await applyFilter();
+                }
+            }
+        });
+    }
+
+    if (pillCurrentMonth) {
+        pillCurrentMonth.addEventListener('click', async () => {
+            if (fpInstance) fpInstance.clear();
+            if (timeFilterSelect) timeFilterSelect.value = 'all_month';
+            updateActivePill('pillCurrentMonth');
+            currentPage = 1;
+            await applyFilter();
+        });
+    }
+
+    if (pillToday) {
+        pillToday.addEventListener('click', async () => {
+            const todayIso = parseToIsoDate(today);
+            const currentMonthIso = todayIso.slice(0, 7);
+            if (monthSelect) monthSelect.value = currentMonthIso;
+            updateAnalyticsMonthBadge(currentMonthIso);
+            if (fpInstance) {
+                fpInstance.jumpToDate(today);
+                fpInstance.setDate([today, today], false);
+            }
+            if (timeFilterSelect) timeFilterSelect.value = 'day:' + todayIso;
+            updateActivePill('pillToday');
+            currentPage = 1;
+            await applyFilter();
+        });
+    }
+
+    if (pillCurrentWeek) {
+        pillCurrentWeek.addEventListener('click', async () => {
+            const cw = getCurrentWeekRange(today);
+            const currentMonthIso = parseToIsoDate(today).slice(0, 7);
+            if (monthSelect) monthSelect.value = currentMonthIso;
+            updateAnalyticsMonthBadge(currentMonthIso);
+            if (fpInstance) {
+                fpInstance.jumpToDate(today);
+                fpInstance.setDate([new Date(cw.start), new Date(cw.end)], false);
+            }
+            if (timeFilterSelect) timeFilterSelect.value = 'current_week';
+            updateActivePill('pillCurrentWeek');
+            currentPage = 1;
+            await applyFilter();
+        });
+    }
+
+    if (clearDateFilterBtn) {
+        clearDateFilterBtn.addEventListener('click', async () => {
+            if (fpInstance) fpInstance.clear();
+            if (timeFilterSelect) timeFilterSelect.value = 'all_month';
+            updateActivePill('pillCurrentMonth');
+            currentPage = 1;
+            await applyFilter();
+        });
+    }
+
+    if (reSyncBtn) {
+        reSyncBtn.addEventListener('click', async () => {
+            const originalHtml = reSyncBtn.innerHTML;
+            const _tr = (typeof t === 'function' ? t : (k => k));
+            try {
+                reSyncBtn.disabled = true;
+                reSyncBtn.innerHTML = '🔄 ' + _tr('reSyncing', {}, 'Đang đồng bộ...');
+                const syncStatusEl = document.getElementById('kpiSyncStatus');
+                if (syncStatusEl) {
+                    syncStatusEl.textContent = _tr('reSyncing', {}, 'Đang đồng bộ dữ liệu từ GitLab...');
+                    syncStatusEl.style.display = 'block';
+                }
+
+                if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                    await chrome.runtime.sendMessage({ type: 'kpi:sync', force: true, month: monthSelect ? monthSelect.value : undefined });
+                }
+
+                await populateMonthOptions();
+                updateTimeFilterOptions();
+                await applyFilter();
+                updateAnalyticsMonthBadge(monthSelect.value);
+
+                if (typeof globalThis.KpiSync?.renderUI === 'function') {
+                    await globalThis.KpiSync.renderUI();
+                    if (syncStatusEl) syncStatusEl.style.display = '';
+                } else if (syncStatusEl) {
+                    syncStatusEl.textContent = '✔ ' + _tr('reSyncSuccess', {}, 'Đồng bộ thành công!');
+                }
+            } catch (err) {
+                console.error('Re-sync failed:', err);
+                alert('Lỗi đồng bộ: ' + (err.message || err));
+            } finally {
+                reSyncBtn.disabled = false;
+                reSyncBtn.innerHTML = originalHtml;
+            }
+        });
+    }
+
+    initFlatpickrCalendar();
+
     monthSelect.addEventListener('change', async () => {
         currentPage = 1;
         updateTimeFilterOptions();
         updateAnalyticsMonthBadge(monthSelect.value);
+        if (fpInstance) {
+            fpInstance.clear();
+            const [selYear, selMonth] = monthSelect.value.split('-').map(Number);
+            fpInstance.jumpToDate(new Date(selYear, selMonth - 1, 1));
+        }
+        updateActivePill('pillCurrentMonth');
+        if (timeFilterSelect) timeFilterSelect.value = 'all_month';
         const hasData = await applyFilter();
         const tabAnalyticsBtn = document.getElementById('tabAnalyticsBtn');
         // renderKpi called inside applyFilter already synchronizes Tab 2 via refreshMonthlyAnalytics.
@@ -725,16 +923,18 @@ if (typeof document !== 'undefined') {
         }
     });
 
-    timeFilterSelect.addEventListener('change', async () => {
-        currentPage = 1;
-        if (timeFilterSelect.value === 'custom_range') {
-            if (customRangeCard) customRangeCard.style.display = 'block';
-            await applyFilter();
-        } else {
-            if (customRangeCard) customRangeCard.style.display = 'none';
-            await applyFilter();
-        }
-    });
+    if (timeFilterSelect) {
+        timeFilterSelect.addEventListener('change', async () => {
+            currentPage = 1;
+            if (timeFilterSelect.value === 'custom_range') {
+                if (customRangeCard) customRangeCard.style.display = 'block';
+                await applyFilter();
+            } else {
+                if (customRangeCard) customRangeCard.style.display = 'none';
+                await applyFilter();
+            }
+        });
+    }
 
     if (applyRangeBtn) {
         applyRangeBtn.addEventListener('click', async () => {
@@ -2313,6 +2513,7 @@ if (typeof document !== 'undefined') {
         setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
     }
 
+    /* @company-start */
     async function exportMonthlyKPIExcel() {
         const isWido = (typeof isWidosoftGitlab === 'function')
             ? isWidosoftGitlab(gitlabServerUrl)
@@ -2370,19 +2571,17 @@ if (typeof document !== 'undefined') {
         const ws1 = wb.getWorksheet('Báo cáo công việc');
         const ws2 = wb.getWorksheet('Chấm điểm KPI');
 
-        // Make room for lifetime spent; move the template's summary one column right.
-        ws1.unMergeCells('L3:M3');
-        ws1.unMergeCells('L22:M22');
-        ws1.spliceColumns(12, 0, []);
-        ws1.mergeCells('M3:N3');
-        ws1.mergeCells('M22:N22');
-        ws1.getColumn('L').width = 15;
+        const round2 = (num) => {
+            if (num === null || num === undefined || num === '') return 0;
+            const n = typeof num === 'number' ? num : parseFloat(num);
+            if (isNaN(n)) return 0;
+            return Math.round((n + Number.EPSILON) * 100) / 100;
+        };
 
-
-        // 1. Xóa toàn bộ dữ liệu và định dạng cũ ở cột B đến L trong Sheet 1 (giữ nguyên cột M và N)
+        // 1. Xóa toàn bộ dữ liệu và định dạng cũ ở cột B đến K trong Sheet 1 (giữ nguyên cột L và M của template)
         for (let r = 1; r <= ws1.rowCount; r++) {
             const row = ws1.getRow(r);
-            for (let c = 2; c <= 12; c++) {
+            for (let c = 2; c <= 11; c++) {
                 const cell = row.getCell(c);
                 cell.value = null;
                 cell.style = {};
@@ -2399,10 +2598,10 @@ if (typeof document !== 'undefined') {
             }
         }
 
-        // 2. Monthly work items: one row per task, with only this month's spent.
+        // 2. Monthly work items: one row per task
         let curRow = 1;
-        const headers = ['Tasks', 'Start date', 'Due date', 'Closed date', _tr('tableEst'), _tr('tableSpent'), _tr('tableLifetimeSpent'), 'Số lần bị reopen', 'Loại task', 'Tiến độ', _tr('tableDiff')];
-        const cols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+        const headers = ['Tasks', 'Start date', 'Due date', 'Closed date', 'Estimate', 'Spent', 'Số lần bị reopen', 'Loại task', 'Tiến độ'];
+        const cols = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
         const monthRange = getPeriodDateRange('all_month', selectedMonth);
         const monthTasks = monthItems.filter(item => !item.isMR)
@@ -2464,13 +2663,11 @@ if (typeof document !== 'undefined') {
                     it.startDate ? formatDate(it.startDate) : '',
                     it.dueDate ? formatDate(it.dueDate) : '',
                     it.closeDate ? formatDate(it.closeDate) : '',
-                    typeof it.estimate === 'number' ? it.estimate : (it.estimate ? parseFloat(it.estimate) : 0),
-                    typeof it.spent === 'number' ? it.spent : (it.spent ? parseFloat(it.spent) : 0),
-                    getItemSpentInRange(it),
+                    typeof it.estimate === 'number' ? round2(it.estimate) : (it.estimate ? round2(parseFloat(it.estimate)) : 0),
+                    round2(getItemSpentInRange(it)),
                     it.reopenTotal || 0,
                     it.type || it.taskType || 'Kế hoạch',
-                    it.progress || 'Đúng hạn',
-                    getItemEstimateVariance(it) ?? '—'
+                    it.progress || 'Đúng hạn'
                 ];
 
                 rowVals.forEach((val, idx) => {
@@ -2504,8 +2701,8 @@ if (typeof document !== 'undefined') {
             };
             curRow++;
 
-            const mrHeaders = ['Tasks', _tr('tableEst'), _tr('tableSpent'), _tr('tableLifetimeSpent'), _tr('tableDiff')];
-            const mrCols = ['B', 'C', 'D', 'E', 'F'];
+            const mrHeaders = ['Tasks', 'Estimate', 'Spent'];
+            const mrCols = ['B', 'C', 'D'];
             mrHeaders.forEach((h, idx) => {
                 const cell = ws1.getCell(`${mrCols[idx]}${curRow}`);
                 cell.value = h;
@@ -2539,7 +2736,7 @@ if (typeof document !== 'undefined') {
                 };
 
                 const estCell = ws1.getCell(`C${curRow}`);
-                estCell.value = typeof mr.estimate === 'number' ? mr.estimate : (mr.estimate ? parseFloat(mr.estimate) : 0);
+                estCell.value = typeof mr.estimate === 'number' ? round2(mr.estimate) : (mr.estimate ? round2(parseFloat(mr.estimate)) : 0);
                 estCell.style = {
                     font: { name: 'Times New Roman', size: 12 },
                     border: {
@@ -2552,82 +2749,67 @@ if (typeof document !== 'undefined') {
                 };
 
                 const spentCell = ws1.getCell(`D${curRow}`);
-                spentCell.value = typeof mr.spent === 'number' ? mr.spent : (mr.spent ? parseFloat(mr.spent) : 0);
-                spentCell.style = {
-                    font: { name: 'Times New Roman', size: 12 },
-                    border: {
-                        top: { style: 'thin' },
-                        left: { style: 'thin' },
-                        bottom: { style: 'thin' },
-                        right: { style: 'thin' }
-                    },
-                    alignment: { horizontal: 'center', vertical: 'middle' }
-                };
-                const lifetimeSpentCell = ws1.getCell(`E${curRow}`);
-                lifetimeSpentCell.value = getItemSpentInRange(mr);
-                lifetimeSpentCell.style = spentCell.style;
-                const diffCell = ws1.getCell(`F${curRow}`);
-                diffCell.value = getItemEstimateVariance(mr) ?? '—';
-                diffCell.style = spentCell.style;
+                spentCell.value = round2(getItemSpentInRange(mr));
+                spentCell.style = estCell.style;
                 curRow++;
             });
         }
 
-        // 4. Cập nhật số liệu Thống Kê & Tỉ lệ ở Cột M & N (Sheet 1)
-        ws1.getCell('N4').value = stats.totalTasks;
-        ws1.getCell('N5').value = stats.totalPlannedTasks;
-        ws1.getCell('N6').value = stats.totalUnplannedTasks;
-        ws1.getCell('N7').value = stats.workingHours;
+        // 4. Cập nhật số liệu Thống Kê & Tỉ lệ ở Cột L & M (Sheet 1)
+        ws1.getCell('M4').value = stats.totalTasks;
+        ws1.getCell('M5').value = stats.totalPlannedTasks;
+        ws1.getCell('M6').value = stats.totalUnplannedTasks;
+        ws1.getCell('M7').value = round2(stats.workingHours);
+        ws1.getCell('L8').value = null;
         ws1.getCell('M8').value = null;
-        ws1.getCell('N8').value = null;
-        ws1.getCell('N9').value = parseFloat(stats.totalSpentTime);
-        ws1.getCell('N10').value = parseFloat(stats.totalPlannedSpentTime);
-        ws1.getCell('N11').value = parseFloat(stats.totalUnplannedSpentTime);
-        ws1.getCell('N12').value = stats.tasksNoStartDate;
-        ws1.getCell('N13').value = stats.tasksNoDueDate;
-        ws1.getCell('N14').value = stats.tasksNoEstimate;
-        ws1.getCell('N15').value = stats.tasksNoSpent;
-        ws1.getCell('N16').value = stats.tasksOnTime;
-        ws1.getCell('N17').value = stats.tasksLate;
-        ws1.getCell('N18').value = stats.tasksNoReopen;
-        ws1.getCell('N19').value = stats.tasksReopen;
+        ws1.getCell('M9').value = round2(stats.totalSpentTime);
+        ws1.getCell('M10').value = round2(stats.totalPlannedSpentTime);
+        ws1.getCell('M11').value = round2(stats.totalUnplannedSpentTime);
+        ws1.getCell('M12').value = stats.tasksNoStartDate;
+        ws1.getCell('M13').value = stats.tasksNoDueDate;
+        ws1.getCell('M14').value = stats.tasksNoEstimate;
+        ws1.getCell('M15').value = stats.tasksNoSpent;
+        ws1.getCell('M16').value = stats.tasksOnTime;
+        ws1.getCell('M17').value = stats.tasksLate;
+        ws1.getCell('M18').value = stats.tasksNoReopen;
+        ws1.getCell('M19').value = stats.tasksReopen;
 
-        ws1.getCell('N23').value = { formula: 'N12/N4*100', result: parseFloat(stats.noStartDateRate) };
-        ws1.getCell('N24').value = { formula: 'N13/N4*100', result: parseFloat(stats.noDueDateRate) };
-        ws1.getCell('N25').value = { formula: 'N14/N4*100', result: parseFloat(stats.noEstimateRate) };
-        ws1.getCell('N26').value = { formula: 'N15/N4*100', result: parseFloat(stats.noSpentRate) };
-        ws1.getCell('N27').value = { formula: 'N16/N4*100', result: parseFloat(stats.onTimeRate) };
-        ws1.getCell('N28').value = { formula: 'N17/N4*100', result: parseFloat(stats.lateRate) };
-        ws1.getCell('N29').value = { formula: 'N18/N4*100', result: parseFloat(stats.noReopenRate) };
-        ws1.getCell('N30').value = { formula: 'N19/N4*100', result: parseFloat(stats.reopenRate) };
-        ws1.getCell('N31').value = { formula: 'N6/N4*100', result: parseFloat(stats.unplannedTaskRate) };
-        ws1.getCell('N32').value = { formula: 'N9/N7*100', result: parseFloat(stats.spentTimeVsWorkingHoursRate) };
+        ws1.getCell('M23').value = { formula: 'M12/M4*100', result: round2(stats.noStartDateRate) };
+        ws1.getCell('M24').value = { formula: 'M13/M4*100', result: round2(stats.noDueDateRate) };
+        ws1.getCell('M25').value = { formula: 'M14/M4*100', result: round2(stats.noEstimateRate) };
+        ws1.getCell('M26').value = { formula: 'M15/M4*100', result: round2(stats.noSpentRate) };
+        ws1.getCell('M27').value = { formula: 'M16/M4*100', result: round2(stats.onTimeRate) };
+        ws1.getCell('M28').value = { formula: 'M17/M4*100', result: round2(stats.lateRate) };
+        ws1.getCell('M29').value = { formula: 'M18/M4*100', result: round2(stats.noReopenRate) };
+        ws1.getCell('M30').value = { formula: 'M19/M4*100', result: round2(stats.reopenRate) };
+        ws1.getCell('M31').value = { formula: 'M6/M4*100', result: round2(stats.unplannedTaskRate) };
+        ws1.getCell('M32').value = { formula: 'M9/M7*100', result: round2(stats.spentTimeVsWorkingHoursRate) };
+        ws1.getCell('L33').value = null;
         ws1.getCell('M33').value = null;
-        ws1.getCell('N33').value = null;
-        ws1.getCell('N34').value = { formula: 'N10/N9*100', result: parseFloat(stats.plannedSpentTimeVsTotalSpentTimeRate) };
-        ws1.getCell('N35').value = { formula: 'N11/N9*100', result: parseFloat(stats.unplannedSpentTimeVsTotalSpentTimeRate) };
+        ws1.getCell('M34').value = { formula: 'M10/M9*100', result: round2(stats.plannedSpentTimeVsTotalSpentTimeRate) };
+        ws1.getCell('M35').value = { formula: 'M11/M9*100', result: round2(stats.unplannedSpentTimeVsTotalSpentTimeRate) };
 
         // 5. Cập nhật Sheet 2 ("Chấm điểm KPI")
         if (ws2) {
-            ws2.getCell('F15').value = parseFloat(stats.noEstimateRate) / 100;
+            ws2.getCell('F15').value = round2(parseFloat(stats.noEstimateRate) / 100);
             ws2.getCell('G15').value = getAttitudeScore(parseFloat(stats.noEstimateRate));
 
-            ws2.getCell('F20').value = parseFloat(stats.noStartDateRate) / 100;
+            ws2.getCell('F20').value = round2(parseFloat(stats.noStartDateRate) / 100);
             ws2.getCell('G20').value = getAttitudeScore(parseFloat(stats.noStartDateRate));
 
-            ws2.getCell('F25').value = parseFloat(stats.noDueDateRate) / 100;
+            ws2.getCell('F25').value = round2(parseFloat(stats.noDueDateRate) / 100);
             ws2.getCell('G25').value = getAttitudeScore(parseFloat(stats.noDueDateRate));
 
-            ws2.getCell('F30').value = parseFloat(stats.noSpentRate) / 100;
+            ws2.getCell('F30').value = round2(parseFloat(stats.noSpentRate) / 100);
             ws2.getCell('G30').value = getAttitudeScore(parseFloat(stats.noSpentRate));
 
-            ws2.getCell('F35').value = parseFloat(stats.spentTimeVsWorkingHoursRate) / 100;
+            ws2.getCell('F35').value = round2(parseFloat(stats.spentTimeVsWorkingHoursRate) / 100);
             ws2.getCell('G35').value = getVolumeScore(parseFloat(stats.spentTimeVsWorkingHoursRate));
 
-            ws2.getCell('F40').value = parseFloat(stats.lateRate) / 100;
+            ws2.getCell('F40').value = round2(parseFloat(stats.lateRate) / 100);
             ws2.getCell('G40').value = getQualityScore(parseFloat(stats.lateRate));
 
-            ws2.getCell('F45').value = parseFloat(stats.reopenRate) / 100;
+            ws2.getCell('F45').value = round2(parseFloat(stats.reopenRate) / 100);
             ws2.getCell('G45').value = getQualityScore(parseFloat(stats.reopenRate));
 
             const totalScore = (
@@ -2641,14 +2823,20 @@ if (typeof document !== 'undefined') {
             ) / 10;
             ws2.getCell('G50').value = {
                 formula: '(E15*G15+E20*G20+E25*G25+E30*G30+E35*G35+E40*G40+E45*G45)/10',
-                result: parseFloat(totalScore.toFixed(2))
+                result: round2(totalScore)
             };
         }
 
-        ws1.pageSetup.printArea = `A1:N${Math.max(ws1.rowCount, curRow - 1)}`;
+        ws1.pageSetup.printArea = `A1:M${Math.max(ws1.rowCount, curRow - 1)}`;
         const buffer = await wb.xlsx.writeBuffer();
         triggerExcelDownload(buffer, `KPI_Thang_${String(selMonth).padStart(2, '0')}-${selYear}.xlsx`);
     }
+    /* @company-end */
+    /* @public-start
+    async function exportMonthlyKPIExcel() {
+        console.warn('Company Excel export is not available in the public edition.');
+    }
+    @public-end */
 
 
     async function saveKpiInfo(params) {
@@ -3874,7 +4062,9 @@ if (typeof window !== 'undefined') {
     window.openDayDetailModal = openDayDetailModal;
     window.initDayDetailModal = initDayDetailModal;
     window.getStatusBadgeText = getStatusBadgeText;
+    /* @company-start */
     window.isWidosoftGitlab = isWidosoftGitlab;
+    /* @company-end */
     window.updateExportButtonsVisibility = updateExportButtonsVisibility;
     window.isItemLate = typeof isItemLate === 'function' ? isItemLate : (window.isItemLate || null);
     window.getItemProgressStatus = typeof getItemProgressStatus === 'function' ? getItemProgressStatus : (window.getItemProgressStatus || null);
@@ -3898,7 +4088,9 @@ if (typeof module !== 'undefined' && module.exports) {
         saveLeaveDay,
         openDayDetailModal,
         initDayDetailModal,
+        /* @company-start */
         isWidosoftGitlab,
+        /* @company-end */
         updateExportButtonsVisibility,
         isItemLate: typeof isItemLate === 'function' ? isItemLate : null,
         getItemProgressStatus: typeof getItemProgressStatus === 'function' ? getItemProgressStatus : null

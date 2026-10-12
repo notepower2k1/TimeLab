@@ -135,7 +135,7 @@ async function main() {
         const beforeCalls = await evaluate(worker, `__syncCalls.filter(path => path === '/api/graphql').length`);
         await evaluate(popupSession, `document.querySelector('[data-tab="tools-tab"]').click(); document.getElementById('syncNowBtn').click();`);
         await wait(() => evaluate(popupSession, `document.getElementById('month-spent-time')?.textContent === '32.00h'`));
-        assert((await evaluate(popupSession, `document.getElementById('kpiSyncStatus').textContent`)).includes('Last full re-sync:'));
+        assert((await evaluate(popupSession, `document.getElementById('kpiSyncStatus').textContent`)).includes('Last synced:'));
         assert.strictEqual(await evaluate(worker, `__syncCalls.filter(path => path === '/api/graphql').length`) - beforeCalls, 1, 'Chrome full re-sync must use one detail request per Work Item');
         assert((await evaluate(popupSession, `document.getElementById('syncNowBtn').textContent`)).includes('Re-sync all'));
         await evaluate(popupSession, `document.getElementById('kpiAutoSyncEnabled').checked = true; document.getElementById('kpiSyncInterval').value = '5'; document.getElementById('saveKpiSyncBtn').click();`);

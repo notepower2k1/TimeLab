@@ -29,7 +29,9 @@
                 <input type="url" id="gitlabServerUrlInput" placeholder="https://gitlab.com hoặc server riêng..." data-i18n-placeholder="gitlabServerUrlPlaceholder" value="https://gitlab.com" />
                 <div class="quick-url-pills">
                     <button type="button" class="quick-url-pill active" data-url="https://gitlab.com">🌐 gitlab.com</button>
+                    <!-- @company-start -->
                     <button type="button" class="quick-url-pill" data-url="https://gitlab.widosoft.com">🏢 gitlab.widosoft.com</button>
+                    <!-- @company-end -->
                 </div>
             </div>
             <input type="password" id="token" placeholder="Your GitLab Token..." data-i18n-placeholder="tokenPlaceholder" />
@@ -71,6 +73,62 @@
 
         <!-- Nội dung Tab 1: Tháng -->
         <div id="month-tab" class="tab-content active">
+            <!-- @company-start -->
+            <!-- Thẻ Odoo Attendance Chấm công -->
+            <div id="odooCard" class="stats-card odoo-card is-disconnected">
+                <!-- Hàng 1: Tiêu đề và Trạng thái -->
+                <div class="odoo-card-top">
+                    <div class="odoo-brand-row">
+                        <div class="odoo-icon-badge" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="odoo-clock-icon">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                        </div>
+                        <div class="odoo-title-group">
+                            <h4 id="odooHeading" class="odoo-title" data-i18n="odooCardTitle">Chấm công Odoo</h4>
+                            <span id="odooUpdatedMeta" class="odoo-meta-hint"></span>
+                        </div>
+                    </div>
+                    <span id="odooStatusPill" class="odoo-status-pill status-disconnected">Chưa kết nối Odoo</span>
+                </div>
+
+                <!-- Hàng 2: Giờ chấm công hôm nay -->
+                <div class="odoo-card-body">
+                    <div class="odoo-stat-box">
+                        <span class="odoo-stat-label" data-i18n="odooHoursToday">Giờ chấm công hôm nay:</span>
+                        <strong id="odooHoursVal" class="odoo-hours-val">—</strong>
+                    </div>
+                    <div id="odooConnectPrompt" class="odoo-connect-prompt">
+                        <button id="odooConnectPromptBtn" type="button" class="btn-link-subtle" data-i18n="odooConnectPrompt">⚙️ Thiết lập kết nối Odoo</button>
+                    </div>
+                </div>
+
+                <!-- Hàng 3: Dòng mới cho tất cả nút bấm (Check-in/out, Kiểm tra lại, Mở Odoo) -->
+                <div id="odooCardActions" class="odoo-card-actions">
+                    <button id="odooToggleAttendanceBtn" type="button" class="btn-odoo-action btn-checkin" style="display: none;">
+                        <span id="odooToggleAttendanceText">Check-in ngay</span>
+                    </button>
+                    <button id="odooRefreshBtn" class="btn-odoo-subtle-action" type="button" title="Kiểm tra lại trạng thái Odoo" data-i18n-title="odooRefreshBtn" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-mini-icon">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                        </svg>
+                        <span data-i18n="odooRefreshBtn">Kiểm tra lại</span>
+                    </button>
+                    <a id="odooOpenLink" target="_blank" rel="noopener noreferrer" class="btn-open-odoo" data-i18n-title="odooOpenBtn" title="Mở Odoo" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-mini-icon">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                            <polyline points="15 3 21 3 21 9"></polyline>
+                            <line x1="10" y1="14" x2="21" y2="3"></line>
+                        </svg>
+                        <span data-i18n="odooOpenBtn">Mở Odoo</span>
+                    </a>
+                </div>
+            </div>
+            <!-- @company-end -->
+
             <div class="stats-card">
                 <div class="stat-header">
                     <h4 data-i18n="statsMonthTitle">⭐ Thống kê tháng</h4>
@@ -169,19 +227,25 @@
                 </div>
             </div>
 
-            <div class="stats-card checkin-card">
-                <div class="checkin-header">
-                    <h4 data-i18n="checkinCardTitle">⏰ Nhắc Check-in / Out</h4>
-                    <span class="badge-workday" data-i18n="workdayBadge">T2 - T6</span>
+            <!-- Cài đặt Ngôn ngữ độc lập -->
+            <div class="stats-card lang-card">
+                <div class="stat-header">
+                    <h4 data-i18n="languageSettingsTitle">🌐 Ngôn ngữ hiển thị</h4>
                 </div>
-
-                <!-- Cài đặt Ngôn ngữ -->
                 <div class="checkin-setting-row lang-setting-row">
                     <label for="appLangSelect" data-i18n="languageLabel">Ngôn ngữ:</label>
                     <select id="appLangSelect" class="lang-select">
                         <option value="vi" data-i18n="langVi">Tiếng Việt</option>
                         <option value="en" data-i18n="langEn">English</option>
                     </select>
+                </div>
+            </div>
+
+            <!-- @public-start
+            <div class="stats-card checkin-card">
+                <div class="checkin-header">
+                    <h4 data-i18n="checkinCardTitle">⏰ Nhắc Check-in / Out</h4>
+                    <span class="badge-workday" data-i18n="workdayBadge">T2 - T6</span>
                 </div>
 
                 <div class="checkin-row">
@@ -227,6 +291,80 @@
                 </div>
                 <div id="checkInOutSaveMsg" class="save-msg" style="display: none;" data-i18n="saveSettingsSuccess">✔ Đã lưu cài đặt!</div>
             </div>
+            @public-end -->
+
+            <!-- @company-start -->
+            <!-- Khối Cài đặt Odoo Attendance Chi Tiết -->
+            <div class="stats-card odoo-settings-card">
+                <div class="checkin-header">
+                    <h4 data-i18n="odooSettingsTitle">🏢 Cài đặt Chấm công Odoo</h4>
+                    <span class="badge-workday" data-i18n="workdayBadge">T2 - T6</span>
+                </div>
+
+                <div class="checkin-setting-row">
+                    <label for="odooServerUrlInput" data-i18n="odooUrlLabel">Địa chỉ Odoo:</label>
+                    <input type="url" id="odooServerUrlInput" class="url-input" placeholder="https://odoo.congty.com..." data-i18n-placeholder="odooUrlPlaceholder" value="https://erp.widosoft.com" />
+                </div>
+                <p class="field-hint" data-i18n="odooSessionHint">Dùng tài khoản đã đăng nhập Odoo trong trình duyệt này.</p>
+
+                <!-- Trạng thái kết nối và tài khoản nhân viên -->
+                <div id="odooAccountRow" class="odoo-account-info-box" style="display: none;">
+                    <div class="odoo-account-status-line">
+                        <span class="odoo-account-label" data-i18n="odooAccountLabel">Tài khoản:</span>
+                        <strong id="odooAccountEmployeeName" class="odoo-account-name">—</strong>
+                        <span id="odooAccountBadge" class="odoo-status-pill status-checked_in" data-i18n="odooStatusConnected">Đã kết nối</span>
+                    </div>
+                </div>
+
+                <div class="checkin-row">
+                    <div class="checkin-toggle-group">
+                        <label class="switch">
+                            <input type="checkbox" id="odooRemindersEnabled" checked>
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="checkin-label" data-i18n="odooRemindersLabel">Nhắc chấm công từ thứ Hai đến thứ Sáu (UTC+7)</span>
+                    </div>
+                </div>
+
+                <div class="odoo-times-grid">
+                    <div class="odoo-time-item">
+                        <label for="odooTime0" data-i18n="odooMorningIn">Check-in sáng</label>
+                        <input id="odooTime0" type="time" class="time-input" value="08:30" />
+                    </div>
+                    <div class="odoo-time-item">
+                        <label for="odooTime1" data-i18n="odooMorningOut">Check-out trưa</label>
+                        <input id="odooTime1" type="time" class="time-input" value="12:00" />
+                    </div>
+                    <div class="odoo-time-item">
+                        <label for="odooTime2" data-i18n="odooAfternoonIn">Check-in chiều</label>
+                        <input id="odooTime2" type="time" class="time-input" value="13:30" />
+                    </div>
+                    <div class="odoo-time-item">
+                        <label for="odooTime3" data-i18n="odooAfternoonOut">Check-out tối</label>
+                        <input id="odooTime3" type="time" class="time-input" value="18:00" />
+                    </div>
+                </div>
+
+                <div class="checkin-setting-row" style="margin-top: 8px;">
+                    <label for="odooSnoozeSelect" data-i18n="snoozeLabel">Nhắc lại:</label>
+                    <select id="odooSnoozeSelect" class="snooze-select">
+                        <option value="5" data-i18n="snooze5m">Mỗi 5 phút (Tối đa 3 lần)</option>
+                        <option value="10" selected data-i18n="snooze10m">Mỗi 10 phút (Tối đa 3 lần)</option>
+                        <option value="15" data-i18n="snooze15m">Mỗi 15 phút (Tối đa 3 lần)</option>
+                        <option value="0" data-i18n="snoozeNone">Không nhắc lại</option>
+                    </select>
+                </div>
+
+                <p class="field-hint" data-i18n="odooHint">Đồng bộ mỗi 30 phút. Trong 30 phút sau mỗi mốc, kiểm tra và nhắc nhở nếu chưa chấm công.</p>
+
+                <div class="checkin-actions">
+                    <button id="odooTestNotifBtn" class="btn-secondary btn-sm" type="button" data-i18n="odooTestNotifBtn" title="Bấm để thử thông báo ngay">🔔 Thử thông báo</button>
+                    <button id="odooDisconnectBtn" class="btn-danger btn-sm" type="button" data-i18n="odooDisconnectBtn" style="display: none;">Ngắt kết nối Odoo</button>
+                    <button id="odooSaveBtn" class="btn-primary btn-sm" type="button" data-i18n="odooSaveBtn">💾 Lưu &amp; Kết nối</button>
+                </div>
+                <div id="odooSaveMsg" class="save-msg" style="display: none;"></div>
+            </div>
+            <!-- @company-end -->
 
             <div class="tools-grid">
                 <button id="note-btn" class="btn-secondary" title="Mở ghi chú trong cửa sổ rời" data-i18n="noteWindowBtn" data-i18n-title="noteWindowBtnTitle">Ghi chú (Cửa sổ) 🗗</button>
@@ -263,6 +401,9 @@
 
     <script src="../utils.js"></script>
     <script src="../sync.js"></script>
+    <!-- @company-start -->
+    <script src="../odoo.js"></script>
+    <!-- @company-end -->
     <script src="popup.js"></script>
 </body>
 

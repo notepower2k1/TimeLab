@@ -394,16 +394,40 @@ const KpiSync = (() => {
         const tr = (key, params) => typeof globalThis.t === 'function' ? globalThis.t(key, params) : key;
         async function render() {
             const data = await chrome.storage.local.get(null), state = stateOf(data), config = settingsOf(data);
+            const lang = typeof getLanguage === 'function' ? getLanguage() : (document.documentElement.lang || 'vi');
             let key = !data.AccessToken ? 'syncDisconnected' : state.status === 'running' ? 'syncRunning'
                 : !config.enabled && !state.manual ? 'syncDisabled' : state.status === 'error' ? 'syncError'
                 : !inSyncHours(data) && !state.manual ? 'syncWaiting' : state.status === 'pending' ? 'syncPending' : 'syncReady';
-            const last = state.lastSuccessAt ? new Date(state.lastSuccessAt).toLocaleString(document.documentElement.lang || 'vi') : '';
-            const full = state.lastFullSyncAt ? new Date(state.lastFullSyncAt).toLocaleString(document.documentElement.lang || 'vi') : '';
-            status.textContent = tr(key) + (last ? ` · ${tr('syncLast', { time: last })}` : '')
-                + (full ? ` · ${tr('syncLastFull', { time: full })}` : ` · ${tr('syncNeedsFull')}`);
-            status.title = state.error || '';
+            const latestTimestamp = Math.max(
+                Date.parse(state.lastSuccessAt || 0) || 0,
+                Date.parse(state.lastFullSyncAt || 0) || 0
+            );
+            if (!data.AccessToken) {
+                status.textContent = tr('syncDisconnected');
+            } else if (state.status === 'running') {
+                status.textContent = tr('syncRunning');
+            } else if (state.status === 'error') {
+                status.textContent = tr('syncError');
+            } else if (state.status === 'pending') {
+                status.textContent = tr('syncPending');
+            } else if (latestTimestamp > 0) {
+                const timeStr = new Date(latestTimestamp).toLocaleString(lang);
+                status.textContent = tr('syncLast', { time: timeStr });
+            } else {
+                status.textContent = tr(key);
+            }
+            const last = state.lastSuccessAt ? new Date(state.lastSuccessAt).toLocaleString(lang) : '';
+            const full = state.lastFullSyncAt ? new Date(state.lastFullSyncAt).toLocaleString(lang) : '';
+            status.title = state.error || [
+                tr(key),
+                last ? tr('syncLast', { time: last }) : '',
+                full ? tr('syncLastFull', { time: full }) : tr('syncNeedsFull')
+            ].filter(Boolean).join(' · ');
             if (enabled && !enabled.dataset.edited) enabled.checked = config.enabled;
             if (interval && !interval.dataset.edited) interval.value = String(config.intervalMinutes);
+        }
+        if (typeof globalThis.KpiSync === 'object' && globalThis.KpiSync) {
+            globalThis.KpiSync.renderUI = render;
         }
         enabled?.addEventListener('change', () => { enabled.dataset.edited = 'true'; });
         interval?.addEventListener('change', () => { interval.dataset.edited = 'true'; });

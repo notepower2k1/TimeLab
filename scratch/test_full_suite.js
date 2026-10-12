@@ -81,6 +81,7 @@ runSubSuite('Automatic Task Sync Subsystem', 'scratch/test_auto_sync.js');
 runSubSuite('Multilingual (VI / EN) i18n Subsystem', 'scratch/test_i18n.js');
 runSubSuite('Custom GitLab Server URL & Dynamic Routing Subsystem', 'scratch/test_gitlab_server_url.js');
 runSubSuite('GitLab Lifecycle & Timelogs Tracking Subsystem', 'scratch/test_lifecycle_timetracking.js');
+runSubSuite('Odoo Attendance & Check-in/out Subsystem', 'scratch/test_odoo_attendance.js');
 
 // --- 2. EXTENSION-WIDE JS SYNTAX VALIDATION ---
 printHeader('EXTENSION-WIDE JAVASCRIPT SYNTAX VALIDATION');
@@ -91,6 +92,7 @@ const jsFilesToValidate = [
     'utils.js',
     'background.js',
     'sync.js',
+    'odoo.js',
     'content_issue.js',
     'content_request.js',
     'popup/popup.js',

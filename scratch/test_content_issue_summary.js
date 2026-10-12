@@ -895,7 +895,7 @@ class MockDocument {
 
         await fetchTaskDetail('my-group/my-project', '777', 'dummy-token-456');
         assert.strictEqual(fetchCalls.length, 1);
-        assert.strictEqual(fetchCalls[0].url, 'https://gitlab.widosoft.com/api/graphql', 'Should fall back to default origin');
+        assert.strictEqual(fetchCalls[0].url, 'https://gitlab.com/api/graphql', 'Should fall back to default origin');
         const body2 = JSON.parse(fetchCalls[0].options.body);
         assert.strictEqual(body2.variables.iid, '777');
 

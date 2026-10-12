@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="flatpickr.min.css">
     <link rel="stylesheet" href="page.css">
 
     <script src="../utils.js"></script>
@@ -14,6 +15,7 @@
     <script src="../sync.js"></script>
     <script src="exceljs.min.js"></script>
     <script src="chart.umd.min.js"></script>
+    <script src="flatpickr.min.js"></script>
     <script src="page.js" defer></script>
 </head>
 
@@ -23,35 +25,38 @@
         <header class="page-header">
             <h1 data-i18n="kpiDashboardTitle">GitLab Productivity 📊</h1>
             <div class="button-container">
+                <button id="reSyncBtn" class="btn-primary" data-i18n="reSyncBtn" data-i18n-title="reSyncTooltip" title="Đồng bộ lại dữ liệu mới nhất từ GitLab">🔄 Đồng bộ lại</button>
                 <button id="deleteWeekBtn" class="btn-danger" data-i18n="deleteWeekBtn" data-i18n-title="deleteWeekTooltip" title="Xóa toàn bộ Task và Merge Request trong tuần đang chọn">🗑️ Xóa tuần</button>
                 <button id="deleteMonthBtn" class="btn-danger" data-i18n="deleteMonthBtn" data-i18n-title="deleteMonthTooltip" title="Xóa toàn bộ Task và Merge Request trong tháng đang chọn">🗑️ Xóa tháng</button>
+                <!-- @company-start -->
                 <button id="exportMonthKpiBtn" class="btn-excel" data-i18n="exportMonthKpiBtn" data-i18n-title="exportMonthKpiTooltip" title="Re-sync đầy đủ rồi xuất báo cáo KPI tháng ra Excel" style="display: none;">📊 Xuất KPI Tháng</button>
+                <!-- @company-end -->
                 <button id="getDailyTaskBtn" class="btn-accent" data-i18n="dailyReportBtn" data-i18n-title="dailyReportTooltip" title="Sao chép báo cáo daily 3 phần">📋 Xuất Daily report</button>
             </div>
         </header>
 
-        <!-- Filter Toolbar (Thanh bộ lọc ngang căn đều phía trên) -->
+        <!-- Filter Toolbar (Chỉ 1 lịch duy nhất và các nút chọn nhanh) -->
         <div class="filter-card">
-            <div class="filter-group">
-                <label for="monthSelect" data-i18n="monthSelectLabel">🗓️ Chọn Tháng</label>
-                <select id="monthSelect"></select>
-            </div>
-            <div class="filter-group">
-                <label for="timeFilterSelect" data-i18n="timeFilterSelectLabel">📅 Lọc theo Tuần / Ngày</label>
-                <select id="timeFilterSelect"></select>
-            </div>
-            <div id="customRangeCard" class="custom-range-card" style="display: none;">
-                <div class="range-inputs">
-                    <div class="range-field">
-                        <label for="startDateInput" data-i18n="customRangeFrom">Từ ngày</label>
-                        <input type="date" id="startDateInput">
-                    </div>
-                    <div class="range-field">
-                        <label for="endDateInput" data-i18n="customRangeTo">Đến ngày</label>
-                        <input type="date" id="endDateInput">
-                    </div>
-                    <button id="applyRangeBtn" class="btn-primary" data-i18n="applyRangeBtn">🔍 Áp dụng</button>
+            <div class="filter-group date-picker-group">
+                <label for="dateFilterInput" data-i18n="dateFilterLabel">📅 Lọc thời gian (Ngày / Khoảng ngày)</label>
+                <div class="date-input-wrapper">
+                    <input type="text" id="dateFilterInput" data-i18n-placeholder="dateFilterPlaceholder" placeholder="Chọn ngày hoặc khoảng ngày..." readonly>
+                    <button type="button" id="clearDateFilterBtn" class="btn-clear-date" title="Xem cả tháng">✕</button>
                 </div>
+            </div>
+            <div class="quick-date-pills">
+                <button type="button" class="date-pill active" id="pillCurrentMonth" data-i18n="pillCurrentMonth">🗓️ Cả tháng</button>
+                <button type="button" class="date-pill" id="pillToday" data-i18n="pillToday">⚡ Hôm nay</button>
+                <button type="button" class="date-pill" id="pillCurrentWeek" data-i18n="pillCurrentWeek">📅 Tuần này</button>
+            </div>
+
+            <!-- Backward compatibility elements for automated test suites & reporting -->
+            <select id="monthSelect" style="display: none;"></select>
+            <select id="timeFilterSelect" style="display: none;"></select>
+            <div id="customRangeCard" style="display: none;">
+                <input type="date" id="startDateInput" style="display: none;">
+                <input type="date" id="endDateInput" style="display: none;">
+                <button id="applyRangeBtn" style="display: none;"></button>
             </div>
         </div>
 

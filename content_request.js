@@ -84,7 +84,7 @@
 
         if (!match) return;
 
-        const baseUrl = match[1] + match[2]; // https://gitlab.widosoft.com/path/to/project/-/merge_requests/123
+        const baseUrl = match[1] + match[2]; // https://gitlab.example.com/path/to/project/-/merge_requests/123
         const id = match[3];
 
         const headerAction = mergeRequestSection.querySelector('.detail-page-header-actions');

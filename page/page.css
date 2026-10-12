@@ -172,6 +172,138 @@ select:focus {
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 
+/* Streamlined Single Calendar Toolbar & Quick Pills */
+.month-filter-group {
+    max-width: 220px;
+    min-width: 170px;
+}
+
+.date-picker-group {
+    flex: 1.5;
+    min-width: 260px;
+    max-width: 380px;
+}
+
+.date-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+#dateFilterInput {
+    width: 100%;
+    padding: 9px 36px 9px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background-color: #ffffff;
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+
+#dateFilterInput:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.btn-clear-date {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.btn-clear-date:hover {
+    color: var(--danger);
+    background-color: #fee2e2;
+}
+
+.quick-date-pills {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 2px;
+    flex-wrap: wrap;
+}
+
+.date-pill {
+    padding: 7px 14px;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    background: #f8fafc;
+    color: var(--text-main);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    outline: none;
+    user-select: none;
+}
+
+.date-pill:hover {
+    background: #e0f2fe;
+    color: #0284c7;
+    border-color: #bae6fd;
+    transform: translateY(-1px);
+}
+
+.date-pill.active {
+    background: #0284c7;
+    color: #ffffff;
+    border-color: #0284c7;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(2, 132, 199, 0.25);
+}
+
+/* Flatpickr Custom Theme Overrides to Match Extension */
+.flatpickr-calendar {
+    font-family: inherit;
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08) !important;
+    padding: 4px;
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange {
+    background: #0284c7 !important;
+    border-color: #0284c7 !important;
+    font-weight: 600;
+}
+
+.flatpickr-day.inRange {
+    background: #e0f2fe !important;
+    border-color: #bae6fd !important;
+    box-shadow: -5px 0 0 #e0f2fe, 5px 0 0 #e0f2fe !important;
+    color: #0369a1 !important;
+}
+
+.flatpickr-day:hover {
+    background: #f0f9ff !important;
+}
+
+.flatpickr-months .flatpickr-month {
+    color: var(--text-main);
+    fill: var(--text-main);
+}
+
 .report-area {
     width: 100%;
 }

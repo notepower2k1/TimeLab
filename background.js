@@ -10,6 +10,9 @@
 if (typeof importScripts === 'function') {
     try {
         importScripts('utils.js', 'i18n.js', 'sync.js');
+        /* @company-start */
+        try { importScripts('odoo.js'); } catch (_) {}
+        /* @company-end */
     } catch (e) {
         console.warn('Failed to importScripts:', e);
     }
@@ -24,6 +27,13 @@ if (typeof importScripts === 'function') {
         if (typeof t === 'undefined') global.t = i18n.t;
         if (typeof detectBrowserLanguage === 'undefined') global.detectBrowserLanguage = i18n.detectBrowserLanguage;
         if (typeof getLanguage === 'undefined') global.getLanguage = i18n.getLanguage;
+
+        /* @company-start */
+        try {
+            const od = require('./odoo.js');
+            if (typeof Odoo === 'undefined') global.Odoo = od;
+        } catch (_) {}
+        /* @company-end */
     } catch (e) {}
 }
 
@@ -138,6 +148,16 @@ function evaluateAlertState(now, settings, state = {}) {
 async function checkCheckInOutAlerts(now = new Date()) {
     if (!isWorkday(now)) return;
 
+    /* @company-start */
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        const { odooConfig } = await chrome.storage.local.get('odooConfig');
+        if (odooConfig?.enabled) {
+            // When Odoo attendance is active in company edition, suppress generic check-in reminders
+            return;
+        }
+    }
+    /* @company-end */
+
     const data = await chrome.storage.local.get([
         'checkInEnabled',
         'checkInTime',
@@ -220,6 +240,54 @@ async function checkCheckInOutAlerts(now = new Date()) {
     }
 }
 
+/* @company-start */
+async function checkOdooAttendanceAndReminders(now = new Date()) {
+    if (typeof Odoo === 'undefined') return;
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+    const { odooConfig, odooData, odooNotified } = await chrome.storage.local.get(['odooConfig', 'odooData', 'odooNotified']);
+    if (!odooConfig || !odooConfig.enabled) return;
+
+    // 1. Sync attendance data
+    let data = odooData;
+    try {
+        data = await Odoo.readAttendance(odooConfig, now);
+        await chrome.storage.local.set({ odooData: data });
+    } catch (_) {
+        // Keep existing data
+    }
+
+    if (!odooConfig.reminders || !data || data.error) return;
+
+    // 2. Check reminder slots
+    const todayStr = (new Date(now.getTime() + 7 * 3600000)).toISOString().slice(0, 10);
+    const notified = (odooNotified && odooNotified.day === todayStr) ? odooNotified : { day: todayStr, slots: [] };
+    const slot = Odoo.attendanceReminder(odooConfig, data, now);
+
+    if (slot !== null && !notified.slots.includes(slot)) {
+        notified.slots.push(slot);
+        await chrome.storage.local.set({ odooNotified: notified });
+
+        const slotTimes = odooConfig.times || Odoo.ODOO_TIMES;
+        const isCheckIn = (slot % 2 === 0);
+        const title = `Odoo · ${isCheckIn ? 'Check-in' : 'Check-out'} · ${slotTimes[slot]}`;
+        const message = isCheckIn
+            ? `Đã đến giờ check-in (${slotTimes[slot]}). Nhấp để mở Odoo chấm công ngay!`
+            : `Đã đến giờ check-out (${slotTimes[slot]}). Nhấp để mở Odoo chấm công ngay!`;
+
+        if (typeof chrome !== 'undefined' && chrome.notifications?.create) {
+            chrome.notifications.create(`odoo-attendance-${slot}-${Date.now()}`, {
+                type: 'basic',
+                iconUrl: (chrome.runtime?.getURL ? chrome.runtime.getURL('icon48.png') : ''),
+                title,
+                message,
+                priority: 2,
+                requireInteraction: true
+            });
+        }
+    }
+}
+/* @company-end */
+
 // --- Dynamic Content Script Registration for Custom GitLab Domains ---
 
 async function syncDynamicContentScript(serverUrl) {
@@ -251,9 +319,16 @@ async function syncDynamicContentScript(serverUrl) {
         const hostname = parsed.hostname.toLowerCase();
 
         // Static domains already covered in manifest.json
+        /* @company-start */
         if (hostname === 'gitlab.com' || hostname === 'gitlab.widosoft.com') {
             return true;
         }
+        /* @company-end */
+        /* @public-start */
+        if (hostname === 'gitlab.com') {
+            return true;
+        }
+        /* @public-end */
 
         // Custom domain: register content scripts
         if (typeof chrome.scripting.registerContentScripts === 'function') {
@@ -409,10 +484,41 @@ if (typeof chrome !== 'undefined' && chrome.alarms && chrome.alarms.onAlarm) {
         if (alarm.name === 'kpiAutoSync' || alarm.name === 'kpiSyncContinue') {
             await runTaskSync({ continue: alarm.name === 'kpiSyncContinue' });
         }
+        /* @company-start */
+        if (alarm.name === 'checkTodos' || alarm.name === 'odoo-attendance') {
+            await checkOdooAttendanceAndReminders().catch(() => {});
+        }
+        /* @company-end */
     });
 }
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, sender, respond) => {
+        /* @company-start */
+        if (message?.type === 'odoo:sync') {
+            checkOdooAttendanceAndReminders().then(() => respond({ ok: true })).catch(err => respond({ error: err.message }));
+            return true;
+        }
+        if (message?.type === 'odoo:disconnect') {
+            respond({ ok: true });
+            return true;
+        }
+        if (message?.type === 'odoo:test_notification') {
+            const lang = resolveLanguage(message.lang);
+            const title = _t('odooNotifTestTitle', null, lang);
+            const body = _t('odooNotifTestMsg', null, lang);
+            if (typeof chrome !== 'undefined' && chrome.notifications?.create) {
+                chrome.notifications.create(`odoo-test-${Date.now()}`, {
+                    type: 'basic',
+                    iconUrl: (chrome.runtime?.getURL ? chrome.runtime.getURL('icon48.png') : ''),
+                    title,
+                    message: body,
+                    priority: 2
+                });
+            }
+            respond({ ok: true });
+            return true;
+        }
+        /* @company-end */
         if (!['kpi:sync', 'kpi:tracking'].includes(message?.type)) return;
         const action = message.type === 'kpi:sync'
             ? runTaskSync({ force: message.force === true, continue: message.continue === true,
@@ -430,6 +536,16 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id && chrome.alarms && chro
 // Notification click handler: opens attendance URL, KPI popup, or to-do page
 async function handleNotificationClick(notifId) {
     if (!notifId || typeof notifId !== 'string') return;
+    /* @company-start */
+    if (notifId.startsWith('odoo-attendance') || notifId.startsWith('odoo-test')) {
+        chrome.notifications.clear(notifId);
+        const { odooConfig } = await chrome.storage.local.get('odooConfig');
+        if (odooConfig?.url) {
+            chrome.tabs.create({ url: `${odooConfig.url}/web` });
+        }
+        return;
+    }
+    /* @company-end */
     if (notifId === 'checkin-alert' || notifId === 'checkout-alert' || notifId.startsWith('test-checkin-alert')) {
         const stateKey = notifId === 'checkin-alert' ? 'checkInState' : (notifId === 'checkout-alert' ? 'checkOutState' : null);
         const data = await chrome.storage.local.get(['checkInOutUrl', ...(stateKey ? [stateKey] : [])]);
@@ -470,6 +586,9 @@ if (typeof module !== 'undefined' && module.exports) {
         recoverSyncState,
         configureSyncAlarm,
         runTaskSync,
-        syncDynamicContentScript
+        syncDynamicContentScript,
+        /* @company-start */
+        checkOdooAttendanceAndReminders
+        /* @company-end */
     };
 }

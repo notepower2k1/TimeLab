@@ -1,0 +1,22 @@
+{
+  "name": "timelab-extension",
+  "version": "1.0.9",
+  "description": "TimeLab - GitLab KPI, Timesheet & Spent Time Tracker",
+  "scripts": {
+    "dev": "node build.js company --watch",
+    "dev:public": "node build.js public --watch",
+    "build": "node build.js all",
+    "build:public": "node build.js public",
+    "build:company": "node build.js company",
+    "test": "node scratch/test_full_suite.js"
+  },
+  "keywords": [
+    "gitlab",
+    "kpi",
+    "chrome-extension",
+    "timetracker",
+    "productivity"
+  ],
+  "author": "notepower2k1",
+  "license": "ISC"
+}

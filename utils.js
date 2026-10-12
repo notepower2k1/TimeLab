@@ -974,6 +974,7 @@ async function getGitlabServerUrl(storageArea = null, fallback = 'https://gitlab
     return sanitizeGitlabUrl(fallback, 'https://gitlab.com');
 }
 
+/* @company-start */
 /**
  * Checks whether the GitLab server URL belongs to Widosoft (company-specific KPI spec).
  * @param {string} url
@@ -983,6 +984,7 @@ function isWidosoftGitlab(url) {
     if (!url || typeof url !== 'string') return false;
     return url.toLowerCase().includes('gitlab.widosoft');
 }
+/* @company-end */
 
 if (typeof window !== 'undefined') {
     window.deletelocalStorage = deletelocalStorage;
@@ -1021,7 +1023,9 @@ if (typeof window !== 'undefined') {
     window.sanitizeGitlabUrl = sanitizeGitlabUrl;
     window.getTokenGenerationUrl = getTokenGenerationUrl;
     window.getGitlabServerUrl = getGitlabServerUrl;
+    /* @company-start */
     window.isWidosoftGitlab = isWidosoftGitlab;
+    /* @company-end */
     window.getTimelogDate = getTimelogDate;
     window.isItemLate = isItemLate;
     window.getItemProgressStatus = getItemProgressStatus;
@@ -1045,7 +1049,9 @@ if (_rootScope) {
     _rootScope.sanitizeGitlabUrl = sanitizeGitlabUrl;
     _rootScope.getTokenGenerationUrl = getTokenGenerationUrl;
     _rootScope.getGitlabServerUrl = getGitlabServerUrl;
+    /* @company-start */
     _rootScope.isWidosoftGitlab = isWidosoftGitlab;
+    /* @company-end */
     _rootScope.getTimelogDate = getTimelogDate;
     _rootScope.getPeriodDateRange = getPeriodDateRange;
     _rootScope.getItemSpentInRange = getItemSpentInRange;
@@ -1102,7 +1108,9 @@ if (typeof module !== 'undefined' && module.exports) {
         sanitizeGitlabUrl,
         getTokenGenerationUrl,
         getGitlabServerUrl,
+        /* @company-start */
         isWidosoftGitlab,
+        /* @company-end */
         isItemLate,
         getItemProgressStatus
     };

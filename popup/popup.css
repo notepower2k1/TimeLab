@@ -726,3 +726,369 @@ input:checked + .slider:before {
     line-height: 1.5;
     margin: 10px 0;
 }
+
+.lang-card {
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+
+.lang-card .stat-header {
+    margin-bottom: 8px;
+}
+
+/* @company-start */
+/* Odoo Attendance Component Styles */
+.odoo-card {
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+    background: var(--card-bg, #ffffff);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.odoo-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.odoo-brand-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.odoo-icon-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: #f3e8ff;
+    color: #7e22ce;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.odoo-clock-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.odoo-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.odoo-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.odoo-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text-primary, #0f172a);
+}
+
+.odoo-status-pill {
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    line-height: 1.3;
+}
+
+.odoo-status-pill::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.odoo-status-pill.status-checked_in {
+    background: #dcfce7;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+.odoo-status-pill.status-checked_in::before {
+    background: #16a34a;
+    box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+}
+
+.odoo-status-pill.status-checked_out {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+}
+.odoo-status-pill.status-checked_out::before {
+    background: #64748b;
+}
+
+.odoo-status-pill.status-not_today {
+    background: #fef3c7;
+    color: #b45309;
+    border: 1px solid #fde68a;
+}
+.odoo-status-pill.status-not_today::before {
+    background: #d97706;
+}
+
+.odoo-status-pill.status-disconnected {
+    background: #f3f4f6;
+    color: #6b7280;
+    border: 1px solid #e5e7eb;
+}
+.odoo-status-pill.status-disconnected::before {
+    background: #9ca3af;
+}
+
+.odoo-status-pill.status-error,
+.odoo-status-pill.status-login_required {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+}
+.odoo-status-pill.status-error::before,
+.odoo-status-pill.status-login_required::before {
+    background: #dc2626;
+}
+
+.odoo-meta-hint {
+    font-size: 0.68rem;
+    color: var(--text-muted, #64748b);
+}
+
+.odoo-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-open-odoo {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #4f46e5;
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #c7d2fe;
+    background: #eef2ff;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-open-odoo:hover {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+
+.btn-mini-icon {
+    width: 12px;
+    height: 12px;
+}
+
+.btn-odoo-subtle-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted, #64748b);
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, #cbd5e1);
+    background: var(--bg-hover, #f8fafc);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-odoo-subtle-action:hover {
+    background: #e2e8f0;
+    color: var(--text-primary, #0f172a);
+}
+
+.odoo-card-body {
+    margin-top: 8px;
+    padding-top: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.odoo-stat-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.odoo-stat-label {
+    font-size: 0.72rem;
+    color: var(--text-muted, #64748b);
+}
+
+.odoo-hours-val {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary, #0f172a);
+}
+
+.odoo-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-color, #e2e8f0);
+}
+
+.odoo-card-actions .btn-odoo-action {
+    flex: 1;
+    justify-content: center;
+}
+
+.btn-odoo-action {
+    padding: 7px 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-odoo-action.btn-checkin {
+    background: #10b981;
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.25);
+}
+
+.btn-odoo-action.btn-checkin:hover {
+    background: #059669;
+}
+
+.btn-odoo-action.btn-checkout {
+    background: #f59e0b;
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.25);
+}
+
+.btn-odoo-action.btn-checkout:hover {
+    background: #d97706;
+}
+
+.btn-odoo-action:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.odoo-connect-prompt {
+    margin-top: 6px;
+    text-align: center;
+}
+
+.btn-link-subtle {
+    border: none;
+    background: none;
+    color: #4f46e5;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 2px 4px;
+}
+
+.btn-link-subtle:hover {
+    color: #3730a3;
+}
+
+.odoo-settings-card {
+    margin-top: 12px;
+}
+
+.odoo-times-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.odoo-time-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.odoo-time-item label {
+    font-size: 0.7rem;
+    color: var(--text-muted, #64748b);
+    font-weight: 600;
+}
+
+.odoo-time-item input[type="time"] {
+    width: 100%;
+    padding: 4px 6px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color, #cbd5e1);
+    border-radius: 6px;
+    background: var(--input-bg, #ffffff);
+    color: var(--text-primary, #0f172a);
+}
+
+.btn-odoo-action.btn-login {
+    background: #4f46e5;
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(79, 70, 229, 0.25);
+}
+
+.btn-odoo-action.btn-login:hover {
+    background: #4338ca;
+}
+
+.odoo-account-info-box {
+    margin: 8px 0 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--bg-hover, #f8fafc);
+    border: 1px solid var(--border-color, #e2e8f0);
+}
+
+.odoo-account-status-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.75rem;
+}
+
+.odoo-account-label {
+    color: var(--text-muted, #64748b);
+    font-weight: 500;
+}
+
+.odoo-account-name {
+    color: var(--text-primary, #0f172a);
+    font-weight: 700;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* @company-end */
+

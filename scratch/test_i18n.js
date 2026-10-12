@@ -108,7 +108,7 @@ assert.strictEqual(i18n.t('connectBtn', null, 'en'), 'Connect Now');
 // Parameter interpolation
 assert.strictEqual(
     i18n.t('syncLast', { time: '10:30' }, 'vi'),
-    'Sync thường lần cuối: 10:30'
+    'Lần đồng bộ cuối: 10:30'
 );
 assert.strictEqual(
     i18n.t('syncLast', { time: '10:30' }, 'en'),

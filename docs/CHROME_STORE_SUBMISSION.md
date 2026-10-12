@@ -9,7 +9,7 @@ This document contains the complete metadata, single-purpose declaration, review
 ### General Info
 - **Extension Name:** `TimeLab - GitLab KPI, Timesheet & Spent Time Tracker`
 - **Short Name:** `TimeLab`
-- **Current Version:** `1.0.8`
+- **Current Version:** `1.0.9`
 - **Primary Category:** `Productivity`
 - **Secondary Category:** `Developer Tools`
 - **Primary Language:** `English` (with built-in Vietnamese & English runtime toggle)
@@ -212,7 +212,7 @@ node scratch/build_release_zip.js
 The script will:
 1. Run all 13 regression test suites and 25 security/syntax validations.
 2. Stage only production files (excluding `scratch/`, `docs/`, `.git/`, markdown files).
-3. Generate the distribution archive at `release/timelab-extension-v1.0.8.zip`.
+3. Generate the distribution archive at `release/timelab-extension-v1.0.9.zip` (or `dist/TimeLab-v1.0.9-public.zip`).
 4. Verify package integrity and display archive size (~1.0 MB).
 
 ### Step 2: Open Chrome Web Store Developer Dashboard
@@ -221,7 +221,7 @@ The script will:
 
 ### Step 3: Upload the Package
 1. Click the **"New Item"** button at the top-right.
-2. Drag and drop `release/timelab-extension-v1.0.8.zip` (or browse to `D:\CodingTime\KPIGitlabExtension\release\timelab-extension-v1.0.8.zip`).
+2. Drag and drop `dist/TimeLab-v1.0.9-public.zip`.
 3. The dashboard will parse `manifest.json` and create the draft item.
 
 ### Step 4: Fill Store Listing Details

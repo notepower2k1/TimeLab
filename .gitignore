@@ -1,5 +1,6 @@
 # Build releases and staging
 release/
+dist/
 
 # Temporary and development files
 *.log
