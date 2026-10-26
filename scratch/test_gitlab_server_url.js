@@ -418,14 +418,14 @@ const { getGitlabServerUrl } = utils;
     const manifestPath = path.resolve(__dirname, '../manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
-    assert.strictEqual(manifest.version, '1.0.9', 'manifest.json version must be bumped to 1.0.9');
+    assert.strictEqual(manifest.version, '1.1.0', 'manifest.json version must be bumped to 1.1.0');
     assert.strictEqual(
         manifest.description,
         'TimeLab - GitLab KPI, Timesheet & Spent Time Tracker',
         'manifest.json description must match Chrome Web Store branding'
     );
     assert.strictEqual(manifest.content_scripts, undefined, 'content_scripts must be removed to avoid DOM injection');
-    console.log('✔ Passed: manifest.json version 1.0.9, description, and zero content_scripts verified');
+    console.log('✔ Passed: manifest.json version 1.1.0, description, and zero content_scripts verified');
 
     // The shared sync client must use the configured GitLab host.
     {
