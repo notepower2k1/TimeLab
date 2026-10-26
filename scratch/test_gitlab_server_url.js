@@ -403,35 +403,18 @@ const { getGitlabServerUrl } = utils;
     assert.ok(unregisteredIds.includes('custom-gitlab-mr-scripts'), 'Must unregister custom-gitlab-mr-scripts for gitlab.widosoft.com');
     assert.strictEqual(registeredScripts.length, 0, 'Must not register dynamic scripts for static gitlab.widosoft.com');
 
-    // 9.3 Custom domain: gitlab.acme.corp -> should unregister previous and register both custom scripts
+    // 9.3 Custom domain: gitlab.acme.corp -> should unregister dynamic scripts (DOM injection disabled)
     registeredScripts = [];
     unregisteredIds = [];
     const customResult = await bg.syncDynamicContentScript('https://gitlab.acme.corp/deep/subpath');
     assert.strictEqual(customResult, true);
-    assert.ok(unregisteredIds.includes('custom-gitlab-scripts'), 'Must unregister custom-gitlab-scripts before registering new');
-    assert.ok(unregisteredIds.includes('custom-gitlab-mr-scripts'), 'Must unregister custom-gitlab-mr-scripts before registering new');
-    assert.strictEqual(registeredScripts.length, 2, 'Must register 2 dynamic content script configs (issues & MRs)');
-    
-    const issueConfig = registeredScripts.find(s => s.id === 'custom-gitlab-scripts');
-    assert.ok(issueConfig, 'Must have custom-gitlab-scripts registered');
-    assert.deepStrictEqual(issueConfig.matches, [
-        'https://gitlab.acme.corp/*/-/issues/*',
-        'https://gitlab.acme.corp/*/-/work_items/*'
-    ]);
-    assert.deepStrictEqual(issueConfig.js, ['utils.js', 'i18n.js', 'content_issue.js']);
-    assert.strictEqual(issueConfig.runAt, 'document_idle');
+    assert.ok(unregisteredIds.includes('custom-gitlab-scripts'), 'Must unregister custom-gitlab-scripts');
+    assert.ok(unregisteredIds.includes('custom-gitlab-mr-scripts'), 'Must unregister custom-gitlab-mr-scripts');
+    assert.strictEqual(registeredScripts.length, 0, 'Must not register dynamic content scripts as DOM injection is disabled');
+    console.log('✔ Passed: syncDynamicContentScript cleans dynamic scripts and disables DOM injection');
 
-    const mrConfig = registeredScripts.find(s => s.id === 'custom-gitlab-mr-scripts');
-    assert.ok(mrConfig, 'Must have custom-gitlab-mr-scripts registered');
-    assert.deepStrictEqual(mrConfig.matches, [
-        'https://gitlab.acme.corp/*/-/merge_requests/*'
-    ]);
-    assert.deepStrictEqual(mrConfig.js, ['utils.js', 'content_request.js']);
-    assert.strictEqual(mrConfig.runAt, 'document_idle');
-    console.log('✔ Passed: syncDynamicContentScript registers custom domains (issues + MRs) and cleans static domains');
-
-    // 10. Testing manifest.json Metadata & Content Script Matches
-    console.log('\n--- 10. Testing manifest.json Metadata & Content Scripts ---');
+    // 10. Testing manifest.json Metadata & Pure API Configuration
+    console.log('\n--- 10. Testing manifest.json Metadata & Configuration ---');
     const manifestPath = path.resolve(__dirname, '../manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
@@ -441,20 +424,8 @@ const { getGitlabServerUrl } = utils;
         'TimeLab - GitLab KPI, Timesheet & Spent Time Tracker',
         'manifest.json description must match Chrome Web Store branding'
     );
-
-    assert.ok(Array.isArray(manifest.content_scripts), 'content_scripts must be an array');
-    assert.ok(manifest.content_scripts.length >= 2, 'content_scripts must have at least 2 entries');
-
-    const issuesScript = manifest.content_scripts[0];
-    assert.ok(issuesScript.matches.includes('*://gitlab.com/*/-/issues/*'), 'content_scripts[0] must match gitlab.com issues');
-    assert.ok(issuesScript.matches.includes('*://gitlab.com/*/-/work_items/*'), 'content_scripts[0] must match gitlab.com work_items');
-    assert.ok(issuesScript.matches.includes('*://gitlab.widosoft.com/*/-/issues/*'), 'content_scripts[0] must match widosoft issues');
-    assert.ok(issuesScript.matches.includes('*://gitlab.widosoft.com/*/-/work_items/*'), 'content_scripts[0] must match widosoft work_items');
-
-    const mrScript = manifest.content_scripts[1];
-    assert.ok(mrScript.matches.includes('*://gitlab.com/*/-/merge_requests/*'), 'content_scripts[1] must match gitlab.com MRs');
-    assert.ok(mrScript.matches.includes('*://gitlab.widosoft.com/*/-/merge_requests/*'), 'content_scripts[1] must match widosoft MRs');
-    console.log('✔ Passed: manifest.json version 1.0.9, description, and content_scripts static domains verified');
+    assert.strictEqual(manifest.content_scripts, undefined, 'content_scripts must be removed to avoid DOM injection');
+    console.log('✔ Passed: manifest.json version 1.0.9, description, and zero content_scripts verified');
 
     // The shared sync client must use the configured GitLab host.
     {

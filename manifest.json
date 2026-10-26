@@ -20,31 +20,6 @@
         "https://*/*",
         "http://*/*"
     ],
-    "content_scripts": [
-        {
-            "matches": [
-                "*://gitlab.com/*/-/issues/*",
-                "*://gitlab.com/*/-/work_items/*",
-                "*://gitlab.widosoft.com/*/-/issues/*",
-                "*://gitlab.widosoft.com/*/-/work_items/*"
-            ],
-            "js": [
-                "utils.js",
-                "i18n.js",
-                "content_issue.js"
-            ]
-        },
-        {
-            "matches": [
-                "*://gitlab.com/*/-/merge_requests/*",
-                "*://gitlab.widosoft.com/*/-/merge_requests/*"
-            ],
-            "js": [
-                "utils.js",
-                "content_request.js"
-            ]
-        }
-    ],
     "icons": {
         "16": "icon16.png",
         "32": "icon32.png",

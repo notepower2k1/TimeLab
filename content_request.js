@@ -1,5 +1,6 @@
 (async () => {
-    console.log('Loading content_request.js');
+    // DOM injection on GitLab pages is disabled in favor of automated API sync
+    return;
 
     const MERGE_ITEM_KEY = 'MergeItemIds';
     const addedLinks = new Set();

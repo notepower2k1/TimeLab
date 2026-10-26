@@ -2277,7 +2277,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     window.injectWorkItemButton = injectWorkItemButton;
 
     (async () => {
-        console.log('Loading content_issue.js');
+        // DOM injection on GitLab pages is disabled in favor of automated API sync
+        if (typeof window !== 'undefined' && !window.__TEST_MODE__) {
+            return;
+        }
 
         if (typeof initLanguage === 'function' && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             try {

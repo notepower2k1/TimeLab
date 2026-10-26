@@ -344,14 +344,16 @@ check('Manifest V3 validity & security configuration in manifest.json', () => {
     assert(manifestJson.action?.default_popup, 'Must specify default_popup');
     assert(fs.existsSync(path.resolve(ROOT_DIR, manifestJson.action.default_popup)), 'Popup HTML file must exist');
 
-    // Verify content scripts
-    assert(Array.isArray(manifestJson.content_scripts), 'content_scripts must be an array');
-    manifestJson.content_scripts.forEach(cs => {
-        assert(Array.isArray(cs.js), 'content_script.js must be an array');
-        cs.js.forEach(scriptFile => {
-            assert(fs.existsSync(path.resolve(ROOT_DIR, scriptFile)), `Content script file must exist: ${scriptFile}`);
+    // Verify content scripts (if enabled)
+    if (manifestJson.content_scripts) {
+        assert(Array.isArray(manifestJson.content_scripts), 'content_scripts must be an array');
+        manifestJson.content_scripts.forEach(cs => {
+            assert(Array.isArray(cs.js), 'content_script.js must be an array');
+            cs.js.forEach(scriptFile => {
+                assert(fs.existsSync(path.resolve(ROOT_DIR, scriptFile)), `Content script file must exist: ${scriptFile}`);
+            });
         });
-    });
+    }
 
     // Verify icon assets
     ['16', '32', '48', '128'].forEach(size => {

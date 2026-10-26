@@ -288,23 +288,13 @@ async function checkOdooAttendanceAndReminders(now = new Date()) {
 }
 /* @company-end */
 
-// --- Dynamic Content Script Registration for Custom GitLab Domains ---
+// --- Dynamic Content Script Cleanup (DOM Injection Disabled in favor of API Sync) ---
 
 async function syncDynamicContentScript(serverUrl) {
     if (typeof chrome === 'undefined' || !chrome.scripting) {
         return false;
     }
-    let targetUrl = serverUrl;
-    if (!targetUrl && typeof _getGitlabServerUrl === 'function') {
-        try {
-            targetUrl = await _getGitlabServerUrl();
-        } catch (e) {
-            targetUrl = 'https://gitlab.com';
-        }
-    }
-    const sanitized = _sanitizeGitlabUrl ? _sanitizeGitlabUrl(targetUrl || 'https://gitlab.com') : (targetUrl || 'https://gitlab.com');
-
-    // Unregister existing custom dynamic scripts first to avoid duplication
+    // Clean up any previously registered dynamic scripts so that DOM is never injected
     try {
         if (typeof chrome.scripting.unregisterContentScripts === 'function') {
             await chrome.scripting.unregisterContentScripts({ ids: ['custom-gitlab-scripts', 'custom-gitlab-mr-scripts'] });
@@ -312,51 +302,7 @@ async function syncDynamicContentScript(serverUrl) {
     } catch (e) {
         // Ignored if not previously registered
     }
-
-    try {
-        const parsed = new URL(sanitized);
-        const origin = parsed.origin;
-        const hostname = parsed.hostname.toLowerCase();
-
-        // Static domains already covered in manifest.json
-        /* @company-start */
-        if (hostname === 'gitlab.com' || hostname === 'gitlab.widosoft.com') {
-            return true;
-        }
-        /* @company-end */
-        /* @public-start */
-        if (hostname === 'gitlab.com') {
-            return true;
-        }
-        /* @public-end */
-
-        // Custom domain: register content scripts
-        if (typeof chrome.scripting.registerContentScripts === 'function') {
-            await chrome.scripting.registerContentScripts([
-                {
-                    id: 'custom-gitlab-scripts',
-                    matches: [
-                        `${origin}/*/-/issues/*`,
-                        `${origin}/*/-/work_items/*`
-                    ],
-                    js: ['utils.js', 'i18n.js', 'content_issue.js'],
-                    runAt: 'document_idle'
-                },
-                {
-                    id: 'custom-gitlab-mr-scripts',
-                    matches: [
-                        `${origin}/*/-/merge_requests/*`
-                    ],
-                    js: ['utils.js', 'content_request.js'],
-                    runAt: 'document_idle'
-                }
-            ]);
-        }
-        return true;
-    } catch (err) {
-        console.error('Error syncing dynamic content script:', err);
-        return false;
-    }
+    return true;
 }
 
 // --- Automatic Task Sync ---

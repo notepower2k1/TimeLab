@@ -24,8 +24,6 @@ const DIST_DIR = path.join(ROOT_DIR, 'dist');
 
 const PROD_FILES = [
     'background.js',
-    'content_issue.js',
-    'content_request.js',
     'i18n.js',
     'utils.js',
     'sync.js',
